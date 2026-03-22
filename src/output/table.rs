@@ -85,7 +85,13 @@ fn render_section_rule(title: &str, width: usize, color: bool) -> String {
 
 // ─── COST SECTION ───────────────────────
 
-fn render_cost_section(summary: &Summary, width: usize, bw: usize, bars: bool, color: bool) -> String {
+fn render_cost_section(
+    summary: &Summary,
+    width: usize,
+    bw: usize,
+    bars: bool,
+    color: bool,
+) -> String {
     let mut out = String::new();
     out.push_str(&render_section_rule("¤ COST", width, color));
     out.push('\n');
@@ -228,7 +234,13 @@ fn render_work_section(summary: &Summary, width: usize, color: bool) -> String {
 
 // ─── CACHE SECTION ──────────────────────
 
-fn render_cache_section(summary: &Summary, width: usize, bw: usize, bars: bool, color: bool) -> String {
+fn render_cache_section(
+    summary: &Summary,
+    width: usize,
+    bw: usize,
+    bars: bool,
+    color: bool,
+) -> String {
     let mut out = String::new();
     out.push_str(&render_section_rule("↻ CACHE", width, color));
     out.push('\n');
@@ -356,7 +368,13 @@ fn compute_cache_savings(summary: &Summary) -> f64 {
 
 // ─── WHERE IT GOES SECTION ──────────────
 
-fn render_where_section(summary: &Summary, width: usize, bw: usize, bars: bool, color: bool) -> String {
+fn render_where_section(
+    summary: &Summary,
+    width: usize,
+    bw: usize,
+    bars: bool,
+    color: bool,
+) -> String {
     let mut out = String::new();
     out.push_str(&render_section_rule("⊕ WHERE IT GOES", width, color));
     out.push('\n');
@@ -373,7 +391,11 @@ fn render_where_section(summary: &Summary, width: usize, bw: usize, bars: bool, 
             color,
         );
         let companion = style::dim(
-            &format!("across {} model{}", model_count, if model_count == 1 { "" } else { "s" }),
+            &format!(
+                "across {} model{}",
+                model_count,
+                if model_count == 1 { "" } else { "s" }
+            ),
             color,
         );
         out.push_str(&format!("\n  {hero_str}    {companion}\n"));
@@ -401,7 +423,11 @@ fn render_where_section(summary: &Summary, width: usize, bw: usize, bars: bool, 
     ];
 
     let mut left: Vec<String> = Vec::new();
-    left.push(format!("  {} {}", style::accent("◇", color), style::subheader("By thread", color)));
+    left.push(format!(
+        "  {} {}",
+        style::accent("◇", color),
+        style::subheader("By thread", color)
+    ));
     for (label, pct, cost) in &thread_rows {
         let label_styled = style::dim(label, color);
         let label_pad = 12usize.saturating_sub(label.len());
@@ -415,7 +441,11 @@ fn render_where_section(summary: &Summary, width: usize, bw: usize, bars: bool, 
 
     // Build right column: By model (top 5)
     let mut right: Vec<String> = Vec::new();
-    right.push(format!("{} {}", style::accent("◆", color), style::subheader("By model", color)));
+    right.push(format!(
+        "{} {}",
+        style::accent("◆", color),
+        style::subheader("By model", color)
+    ));
     let model_limit = summary.by_model.len().min(5);
     for m in &summary.by_model[..model_limit] {
         let model_pct = if total_cost > 0.0 {
@@ -448,7 +478,11 @@ fn render_where_section(summary: &Summary, width: usize, bw: usize, bars: bool, 
 
     // By Project (if 2+ projects)
     if summary.by_project.len() >= 2 {
-        let project_header = format!("{} {}", style::accent("▪", color), style::subheader("By project", color));
+        let project_header = format!(
+            "{} {}",
+            style::accent("▪", color),
+            style::subheader("By project", color)
+        );
         out.push_str(&format!("\n  {project_header}\n"));
         let max_cost = summary
             .by_project
