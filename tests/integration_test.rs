@@ -25,29 +25,27 @@ fn test_simple_session_table_output() {
         stdout.contains("ccmetrics v0.1.0"),
         "Should show version header"
     );
+    // New 4-section layout
+    assert!(stdout.contains("COST"), "Should show COST section");
     assert!(
-        stdout.contains("Token Breakdown"),
-        "Should show token table"
+        stdout.contains("YOUR WORK"),
+        "Should show YOUR WORK section"
     );
+    assert!(stdout.contains("CACHE"), "Should show CACHE section");
     assert!(
-        stdout.contains("Main vs Subagent"),
-        "Should show split table"
+        stdout.contains("WHERE IT GOES"),
+        "Should show WHERE IT GOES section"
     );
-    assert!(stdout.contains("Dedup:"), "Should show dedup stats");
 
-    // Fixtures use 3 models, so the "By Model" table should appear
-    assert!(stdout.contains("By Model"), "Should show By Model table");
-    assert!(
-        stdout.contains("claude-opus-4-6"),
-        "Should show opus model in By Model table"
-    );
+    // Fixtures use 3 models, so the model breakdown should appear
+    assert!(stdout.contains("claude-opus-4-6"), "Should show opus model");
     assert!(
         stdout.contains("claude-sonnet-4-5"),
-        "Should show sonnet model in By Model table"
+        "Should show sonnet model"
     );
     assert!(
         stdout.contains("claude-haiku-4-5"),
-        "Should show haiku model in By Model table"
+        "Should show haiku model"
     );
 }
 
@@ -556,4 +554,48 @@ fn test_daily_with_filter() {
 
     assert!(success, "ccmetrics daily --model opus should succeed");
     assert!(stdout.contains("filtered"), "Should show filter indicator");
+}
+
+// --- UX Pass: dashboard section tests ---
+
+#[test]
+fn test_dashboard_has_dollar_sign() {
+    let (stdout, _stderr, success) =
+        run_cc_metrics(&["--path", fixtures_path().to_str().unwrap(), "--quiet"]);
+
+    assert!(success);
+    assert!(stdout.contains('$'), "Dashboard should show cost with $");
+}
+
+#[test]
+fn test_dashboard_has_tokens_label() {
+    let (stdout, _stderr, success) =
+        run_cc_metrics(&["--path", fixtures_path().to_str().unwrap(), "--quiet"]);
+
+    assert!(success);
+    assert!(stdout.contains("tokens"), "Dashboard should mention tokens");
+}
+
+#[test]
+fn test_dashboard_has_efficiency() {
+    let (stdout, _stderr, success) =
+        run_cc_metrics(&["--path", fixtures_path().to_str().unwrap(), "--quiet"]);
+
+    assert!(success);
+    assert!(
+        stdout.contains("efficiency"),
+        "Cache section should show efficiency"
+    );
+}
+
+#[test]
+fn test_dashboard_footer() {
+    let (stdout, _stderr, success) =
+        run_cc_metrics(&["--path", fixtures_path().to_str().unwrap(), "--quiet"]);
+
+    assert!(success);
+    assert!(
+        stdout.contains("ccmetrics explain"),
+        "Footer should reference explain command"
+    );
 }

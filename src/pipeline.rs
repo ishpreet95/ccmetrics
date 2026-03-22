@@ -1,5 +1,10 @@
 use std::io::{self, IsTerminal, Write};
-use std::time::Instant;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread;
+use std::time::{Duration, Instant};
+
+use crate::output::style;
 
 /// Whether pipeline output should be shown.
 ///
@@ -10,49 +15,79 @@ pub fn should_show() -> bool {
     io::stderr().is_terminal()
 }
 
-/// Whether to use ANSI color/escape codes.
-fn use_color() -> bool {
-    std::env::var("NO_COLOR").is_err()
-}
+const SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
-const SPINNER_CHAR: char = '⠋';
-
-/// A pipeline step that shows progress with a spinner.
+/// A pipeline step that shows progress with an animated spinner.
 pub struct PipelineStep {
-    #[allow(dead_code)]
-    label: String,
     start: Instant,
     use_color: bool,
+    stop: Arc<AtomicBool>,
+    handle: Option<thread::JoinHandle<()>>,
 }
 
 impl PipelineStep {
-    /// Start a new pipeline step with a spinner.
+    /// Start a new pipeline step with an animated spinner on a background thread.
     pub fn start(label: &str) -> Self {
-        let color = use_color();
-        let step = PipelineStep {
-            label: label.to_string(),
-            start: Instant::now(),
-            use_color: color,
-        };
+        let color = style::stderr_color();
+        let stop = Arc::new(AtomicBool::new(false));
 
-        if color {
-            eprint!("  \x1b[36m{}\x1b[0m {} ...", SPINNER_CHAR, label);
+        let handle = if color {
+            let stop_clone = Arc::clone(&stop);
+            let label_owned = label.to_string();
+            Some(thread::spawn(move || {
+                let mut frame = 0usize;
+                while !stop_clone.load(Ordering::Relaxed) {
+                    let ch = SPINNER_FRAMES[frame % SPINNER_FRAMES.len()];
+                    eprint!(
+                        "\r\x1b[2K  {}{}{} {} ...",
+                        style::ACCENT,
+                        ch,
+                        style::RESET,
+                        label_owned,
+                    );
+                    let _ = io::stderr().flush();
+                    frame += 1;
+                    thread::sleep(Duration::from_millis(80));
+                }
+            }))
         } else {
             eprint!("  ... {} ...", label);
-        }
-        let _ = io::stderr().flush();
+            let _ = io::stderr().flush();
+            None
+        };
 
-        step
+        PipelineStep {
+            start: Instant::now(),
+            use_color: color,
+            stop,
+            handle,
+        }
+    }
+
+    /// Stop the spinner thread and wait for it to finish.
+    fn stop_spinner(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
     }
 
     /// Complete the step with a result summary.
-    pub fn done(self, result: &str) {
-        let elapsed = self.start.elapsed();
-        let ms = elapsed.as_millis();
+    pub fn done(mut self, result: &str) {
+        self.stop_spinner();
+        let ms = self.start.elapsed().as_millis();
 
         if self.use_color {
             eprint!("\r\x1b[2K");
-            eprintln!("  \x1b[32m✓\x1b[0m {} \x1b[2m({}ms)\x1b[0m", result, ms);
+            eprintln!(
+                "  {}✓{} {} {}({}ms){}",
+                style::GREEN,
+                style::RESET,
+                result,
+                style::DIM,
+                ms,
+                style::RESET,
+            );
         } else {
             eprintln!();
             eprintln!("  [ok] {} ({}ms)", result, ms);
@@ -61,13 +96,21 @@ impl PipelineStep {
 
     /// Complete the step with a warning.
     #[allow(dead_code)]
-    pub fn warn(self, result: &str) {
-        let elapsed = self.start.elapsed();
-        let ms = elapsed.as_millis();
+    pub fn warn(mut self, result: &str) {
+        self.stop_spinner();
+        let ms = self.start.elapsed().as_millis();
 
         if self.use_color {
             eprint!("\r\x1b[2K");
-            eprintln!("  \x1b[33m!\x1b[0m {} \x1b[2m({}ms)\x1b[0m", result, ms);
+            eprintln!(
+                "  {}!{} {} {}({}ms){}",
+                style::YELLOW,
+                style::RESET,
+                result,
+                style::DIM,
+                ms,
+                style::RESET,
+            );
         } else {
             eprintln!();
             eprintln!("  [warn] {} ({}ms)", result, ms);
@@ -82,8 +125,8 @@ pub fn header() {
 
 /// Print the pipeline separator before dashboard output.
 pub fn separator() {
-    if use_color() {
-        eprintln!("  \x1b[2m{}\x1b[0m", "─".repeat(60));
+    if style::stderr_color() {
+        eprintln!("  {}{}{}", style::DIM, "─".repeat(60), style::RESET);
     } else {
         eprintln!("  {}", "─".repeat(60));
     }

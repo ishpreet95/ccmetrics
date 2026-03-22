@@ -60,19 +60,19 @@ pub fn render(days: &[DayBreakdown], version: &str, filters: &Filters) -> String
     table.add_row(vec![
         Cell::new("Total")
             .add_attribute(Attribute::Bold)
-            .fg(Color::Cyan),
+            .fg(Color::DarkGreen),
         Cell::new(format_number(total_requests as u64))
             .set_alignment(CellAlignment::Right)
             .add_attribute(Attribute::Bold)
-            .fg(Color::Cyan),
+            .fg(Color::DarkGreen),
         Cell::new(format_abbreviated(total_io_tokens))
             .set_alignment(CellAlignment::Right)
             .add_attribute(Attribute::Bold)
-            .fg(Color::Cyan),
+            .fg(Color::DarkGreen),
         Cell::new(format_dollar(total_cost))
             .set_alignment(CellAlignment::Right)
             .add_attribute(Attribute::Bold)
-            .fg(Color::Cyan),
+            .fg(Color::DarkGreen),
     ]);
 
     output.push_str(&table.to_string());
