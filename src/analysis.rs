@@ -108,8 +108,14 @@ pub fn analyze(entries: &[UsageEntry], stats: &ParseStats) -> Summary {
     by_model.sort_by(|a, b| b.cost.total_cmp(&a.cost));
 
     let unique_requests = entries.len();
-    let dedup_ratio = if unique_requests > 0 {
-        stats.assistant_lines as f64 / unique_requests as f64
+    // Use pre-filter unique count for dedup ratio so it's not inflated by filtering
+    let dedup_base = if stats.unique_after_dedup > 0 {
+        stats.unique_after_dedup
+    } else {
+        unique_requests
+    };
+    let dedup_ratio = if dedup_base > 0 {
+        stats.assistant_lines as f64 / dedup_base as f64
     } else {
         0.0
     };

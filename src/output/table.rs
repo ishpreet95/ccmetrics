@@ -1,16 +1,28 @@
 use comfy_table::{Attribute, Cell, CellAlignment, Color, ContentArrangement, Table};
 
+use crate::filters::Filters;
 use crate::types::Summary;
 
 /// Format the summary as a terminal table.
-pub fn render(summary: &Summary) -> String {
+pub fn render(summary: &Summary, filters: &Filters) -> String {
     let mut output = String::new();
 
     // Header
-    output.push_str(&format!(
-        "ccmetrics v{} — {} days, {} sessions, {} projects\n\n",
-        summary.version, summary.days, summary.sessions, summary.projects
-    ));
+    if filters.is_active() {
+        output.push_str(&format!(
+            "ccmetrics v{} — {} days, {} sessions, {} projects (filtered: {})\n\n",
+            summary.version,
+            summary.days,
+            summary.sessions,
+            summary.projects,
+            filters.describe()
+        ));
+    } else {
+        output.push_str(&format!(
+            "ccmetrics v{} — {} days, {} sessions, {} projects\n\n",
+            summary.version, summary.days, summary.sessions, summary.projects
+        ));
+    }
 
     // Token breakdown table
     let mut token_table = Table::new();

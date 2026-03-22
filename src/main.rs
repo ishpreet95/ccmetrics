@@ -1,8 +1,10 @@
 mod analysis;
 mod dedup;
 mod explain;
+mod filters;
 mod output;
 mod parser;
+mod pipeline;
 mod pricing;
 mod scanner;
 mod types;
@@ -13,6 +15,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use rayon::prelude::*;
 
+use filters::Filters;
 use types::ParseStats;
 
 /// Honest token metrics for Claude Code.
@@ -29,6 +32,26 @@ struct Cli {
     /// Show verbose details (dedup stats, file counts, modifiers)
     #[arg(long, short)]
     verbose: bool,
+
+    /// Suppress pipeline progress output
+    #[arg(long, short)]
+    quiet: bool,
+
+    /// Filter: only include entries from this date onward (2026-03-01, 7d, 2w, today). Dates are UTC.
+    #[arg(long)]
+    since: Option<String>,
+
+    /// Filter: only include entries up to this date, inclusive (2026-03-01, 7d, today). Dates are UTC.
+    #[arg(long)]
+    until: Option<String>,
+
+    /// Filter: only include entries matching this model (fuzzy: opus, sonnet, haiku)
+    #[arg(long)]
+    model: Option<String>,
+
+    /// Filter: only include entries from projects matching this pattern
+    #[arg(long)]
+    project: Option<String>,
 
     /// Path to Claude Code projects directory
     #[arg(long, default_value_os_t = default_claude_path())]
@@ -53,11 +76,30 @@ fn default_claude_path() -> PathBuf {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    // Parse filter flags
+    let filter = build_filters(&cli)?;
+
+    // Should we show the streaming pipeline?
+    let show_pipeline = !cli.json && !cli.quiet && pipeline::should_show();
+
+    if show_pipeline {
+        pipeline::header();
+    }
+
     // Step 1: Scan for JSONL files
+    let step = if show_pipeline {
+        Some(pipeline::PipelineStep::start("Scanning for session files"))
+    } else {
+        None
+    };
+
     let files = scanner::scan_jsonl_files(&cli.path)
         .with_context(|| format!("Failed to scan {}", cli.path.display()))?;
 
     if files.is_empty() {
+        if let Some(s) = step {
+            s.warn("No JSONL files found");
+        }
         if cli.json {
             println!("{{\"error\": \"No JSONL files found\"}}");
         } else {
@@ -73,7 +115,22 @@ fn main() -> Result<()> {
         .count();
     let sub_file_count = files.len() - main_file_count;
 
+    if let Some(s) = step {
+        s.done(&format!(
+            "Found {} files ({} main + {} subagent)",
+            files.len(),
+            main_file_count,
+            sub_file_count
+        ));
+    }
+
     // Step 2: Parse all files in parallel
+    let step = if show_pipeline {
+        Some(pipeline::PipelineStep::start("Parsing JSONL entries"))
+    } else {
+        None
+    };
+
     let parse_results: Vec<_> = files
         .par_iter()
         .map(|file| {
@@ -101,8 +158,28 @@ fn main() -> Result<()> {
         all_warnings.extend(result.warnings);
     }
 
+    if let Some(s) = step {
+        let mut detail = format!("{} assistant entries", stats.assistant_lines);
+        if stats.skipped_lines > 0 {
+            detail.push_str(&format!(", {} skipped", stats.skipped_lines));
+        }
+        if stats.synthetic_messages > 0 {
+            detail.push_str(&format!(
+                ", {} synthetic excluded",
+                stats.synthetic_messages
+            ));
+        }
+        s.done(&detail);
+    }
+
     // Step 3: Deduplicate
-    // Only clone raw entries when explain mode needs them (avoids ~90K entry copy otherwise)
+    let step = if show_pipeline {
+        Some(pipeline::PipelineStep::start("Deduplicating by requestId"))
+    } else {
+        None
+    };
+
+    // Only clone raw entries when explain mode needs them
     let raw_entries_for_explain = if matches!(cli.command, Some(Commands::Explain)) {
         Some(all_entries.clone())
     } else {
@@ -111,10 +188,74 @@ fn main() -> Result<()> {
     let (deduped, no_id_count) = dedup::deduplicate(all_entries);
     stats.no_id_entries = no_id_count;
 
-    // Step 4: Analyze
+    // Store pre-filter unique count for accurate dedup ratio
+    // (analysis.rs uses this, not the post-filter count)
+    let pre_filter_unique = deduped.len();
+    stats.unique_after_dedup = pre_filter_unique;
+
+    let dedup_ratio = if pre_filter_unique == 0 {
+        0.0
+    } else {
+        stats.assistant_lines as f64 / pre_filter_unique as f64
+    };
+
+    if let Some(s) = step {
+        s.done(&format!(
+            "{} unique requests ({:.1}x reduction)",
+            pre_filter_unique, dedup_ratio
+        ));
+    }
+
+    // Step 4: Apply filters (if any)
+    let deduped = if filter.is_active() {
+        let step = if show_pipeline {
+            Some(pipeline::PipelineStep::start("Applying filters"))
+        } else {
+            None
+        };
+
+        let before = deduped.len();
+        let filtered = filter.apply(deduped);
+
+        if let Some(s) = step {
+            s.done(&format!(
+                "{} → {} entries ({})",
+                before,
+                filtered.len(),
+                filter.describe()
+            ));
+        }
+
+        filtered
+    } else {
+        deduped
+    };
+
+    // Step 5: Analyze
+    let step = if show_pipeline {
+        Some(pipeline::PipelineStep::start("Calculating costs"))
+    } else {
+        None
+    };
+
     let summary = analysis::analyze(&deduped, &stats);
 
-    // Step 5: Route to output mode
+    if let Some(s) = step {
+        let model_count = summary.by_model.len();
+        s.done(&format!(
+            "${:.2} total ({} model{}, {} token types)",
+            summary.cost.total(),
+            model_count,
+            if model_count == 1 { "" } else { "s" },
+            5
+        ));
+    }
+
+    if show_pipeline {
+        pipeline::separator();
+    }
+
+    // Step 6: Route to output mode
     match cli.command {
         Some(Commands::Explain) => {
             let raw =
@@ -125,10 +266,11 @@ fn main() -> Result<()> {
         }
         None => {
             if cli.json {
-                let json = output::json::render(&summary).context("Failed to serialize JSON")?;
+                let json =
+                    output::json::render(&summary, &filter).context("Failed to serialize JSON")?;
                 println!("{json}");
             } else {
-                let table = output::table::render(&summary);
+                let table = output::table::render(&summary, &filter);
                 print!("{table}");
 
                 if cli.verbose {
@@ -166,4 +308,34 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Build filter criteria from CLI flags.
+fn build_filters(cli: &Cli) -> Result<Filters> {
+    let since = cli
+        .since
+        .as_deref()
+        .map(filters::parse_date)
+        .transpose()
+        .map_err(|e| anyhow::anyhow!(e))?;
+
+    let until = cli
+        .until
+        .as_deref()
+        .map(|s| {
+            filters::parse_date(s).map(|dt| {
+                // --until is inclusive: "until 2026-03-15" means the entire day.
+                // We use a half-open interval: entries with timestamp < (start of next day).
+                dt + chrono::Duration::days(1)
+            })
+        })
+        .transpose()
+        .map_err(|e| anyhow::anyhow!(e))?;
+
+    Ok(Filters {
+        since,
+        until,
+        model: cli.model.clone(),
+        project: cli.project.clone(),
+    })
 }

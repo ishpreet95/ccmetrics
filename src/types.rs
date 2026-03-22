@@ -124,6 +124,7 @@ pub struct ParseStats {
     pub assistant_lines: usize,
     pub skipped_lines: usize,
     pub no_id_entries: usize,
+    pub unique_after_dedup: usize,
     pub synthetic_messages: usize,
     #[allow(dead_code)] // Tracked for Phase 3 verbose warnings
     pub unknown_models: usize,

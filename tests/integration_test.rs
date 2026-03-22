@@ -272,3 +272,137 @@ fn test_empty_path_no_crash() {
         "Should report no files found"
     );
 }
+
+#[test]
+fn test_model_filter() {
+    let (stdout, _stderr, success) = run_cc_metrics(&[
+        "--path",
+        fixtures_path().to_str().unwrap(),
+        "--json",
+        "--model",
+        "opus",
+    ]);
+
+    assert!(success, "ccmetrics --model opus should succeed");
+    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+
+    // With model filter, all entries should be opus
+    let by_model = json["by_model"].as_array().unwrap();
+    assert_eq!(by_model.len(), 1, "Should have only 1 model after filter");
+    assert!(
+        by_model[0]["model"].as_str().unwrap().contains("opus"),
+        "Filtered model should be opus"
+    );
+
+    // Filter should be in JSON output
+    assert!(
+        json["filter"].is_object(),
+        "Should have filter info in JSON"
+    );
+    assert_eq!(
+        json["filter"]["model"].as_str().unwrap(),
+        "opus",
+        "Filter should show model"
+    );
+}
+
+#[test]
+fn test_model_filter_no_match() {
+    let (stdout, _stderr, success) = run_cc_metrics(&[
+        "--path",
+        fixtures_path().to_str().unwrap(),
+        "--json",
+        "--model",
+        "gemini",
+    ]);
+
+    assert!(success, "Should succeed even with no matching model");
+    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+
+    let unique = json["dedup"]["unique_requests"].as_u64().unwrap();
+    assert_eq!(
+        unique, 0,
+        "No matching entries should give 0 unique requests"
+    );
+}
+
+#[test]
+fn test_date_filter_since() {
+    // All fixture entries have timestamps in 2025-2026 range
+    // Filtering with --since far in the future should give 0 entries
+    let (stdout, _stderr, success) = run_cc_metrics(&[
+        "--path",
+        fixtures_path().to_str().unwrap(),
+        "--json",
+        "--since",
+        "2030-01-01",
+    ]);
+
+    assert!(success, "Should succeed with future --since");
+    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let unique = json["dedup"]["unique_requests"].as_u64().unwrap();
+    assert_eq!(unique, 0, "Future --since should give 0 entries");
+}
+
+#[test]
+fn test_date_filter_invalid() {
+    let (_stdout, stderr, success) = run_cc_metrics(&[
+        "--path",
+        fixtures_path().to_str().unwrap(),
+        "--since",
+        "not-a-date",
+    ]);
+
+    assert!(!success, "Invalid date should fail");
+    assert!(
+        stderr.contains("Unrecognized date format"),
+        "Should show date parse error: {stderr}"
+    );
+}
+
+#[test]
+fn test_quiet_flag_suppresses_pipeline() {
+    let (_stdout, stderr, success) =
+        run_cc_metrics(&["--path", fixtures_path().to_str().unwrap(), "--quiet"]);
+
+    assert!(success, "ccmetrics --quiet should succeed");
+    // Pipeline output goes to stderr; --quiet should suppress it
+    assert!(
+        !stderr.contains("Scanning"),
+        "Pipeline should be suppressed with --quiet"
+    );
+}
+
+#[test]
+fn test_filter_indicator_in_table() {
+    let (stdout, _stderr, success) = run_cc_metrics(&[
+        "--path",
+        fixtures_path().to_str().unwrap(),
+        "--model",
+        "opus",
+        "--quiet",
+    ]);
+
+    assert!(success);
+    assert!(
+        stdout.contains("filtered"),
+        "Should show filter indicator in header"
+    );
+    assert!(
+        stdout.contains("model: opus"),
+        "Should describe active filter"
+    );
+}
+
+#[test]
+fn test_json_no_filter_field_when_unfiltered() {
+    let (stdout, _stderr, success) =
+        run_cc_metrics(&["--path", fixtures_path().to_str().unwrap(), "--json"]);
+
+    assert!(success);
+    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert!(
+        json.get("filter").is_none(),
+        "Unfiltered JSON should not have filter field"
+    );
+}

@@ -1,17 +1,32 @@
 use serde::Serialize;
 
+use crate::filters::Filters;
 use crate::types::Summary;
 
 #[derive(Serialize)]
 pub struct JsonOutput {
     pub version: String,
     pub generated_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filter: Option<FilterInfo>,
     pub data_range: DataRange,
     pub dedup: DedupStats,
     pub tokens: TokenCounts,
     pub cost: CostOutput,
     pub split: SplitOutput,
     pub by_model: Vec<ModelOutput>,
+}
+
+#[derive(Serialize)]
+pub struct FilterInfo {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub since: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub until: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -85,10 +100,22 @@ pub struct ModelOutput {
 }
 
 /// Render the summary as JSON.
-pub fn render(summary: &Summary) -> serde_json::Result<String> {
+pub fn render(summary: &Summary, filters: &Filters) -> serde_json::Result<String> {
+    let filter_info = if filters.is_active() {
+        Some(FilterInfo {
+            since: filters.since.map(|dt| dt.to_rfc3339()),
+            until: filters.until.map(|dt| dt.to_rfc3339()),
+            model: filters.model.clone(),
+            project: filters.project.clone(),
+        })
+    } else {
+        None
+    };
+
     let output = JsonOutput {
         version: summary.version.clone(),
         generated_at: summary.generated_at.to_rfc3339(),
+        filter: filter_info,
         data_range: DataRange {
             first_session: summary.first_session.map(|t| t.to_rfc3339()),
             last_session: summary.last_session.map(|t| t.to_rfc3339()),
