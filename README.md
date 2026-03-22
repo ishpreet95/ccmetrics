@@ -8,7 +8,7 @@ Parses Claude Code JSONL session files, correctly deduplicates streaming chunks,
 
 ## Why
 
-Every Claude Code usage tool gets the math wrong:
+Every Claude Code usage tool gets the math wrong. We [researched why](https://ishpreet95.me/blog/understanding-claude-code-token-metrics) and built the correct implementation:
 
 | Tool | Output Tokens | Total Cost | Problem |
 |------|:---:|:---:|---|
