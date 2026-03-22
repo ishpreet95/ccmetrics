@@ -6,3 +6,6 @@
 
 # Claude Code session data
 .claude/
+
+# Memory files
+memory/
