@@ -702,12 +702,12 @@ Appended after the default table:
 
 ### Performance
 
-| Metric                  | Target        |
-| ----------------------- | ------------- |
-| Parse 1,337 JSONL files | < 1 second    |
-| Binary size             | < 5 MB        |
-| Memory usage            | < 50 MB peak  |
-| Network requests        | Zero (always) |
+| Metric                  | Target        | Notes |
+| ----------------------- | ------------- | ----- |
+| Parse time              | Scales with dataset | ~6s for 1,420 files on Apple M4 Max |
+| Binary size             | < 5 MB        | |
+| Memory usage            | < 50 MB peak  | |
+| Network requests        | Zero (always) | |
 
 ### Correctness
 

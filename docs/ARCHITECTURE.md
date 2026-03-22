@@ -75,6 +75,8 @@ The streaming pipeline (`pipeline.rs`) orchestrates the data flow with real-time
 ✔ $2879.75 total (5 models, 5 token types)         (84ms)
 ```
 
+*Example from 54 days of usage on Apple M4 Max, 36GB RAM. Timings will vary by machine and dataset size.*
+
 Each step reports timing and key stats. Suppressed with `--quiet`.
 
 ## Dashboard Design: Boreal Command
@@ -138,7 +140,7 @@ Pricing is compiled into the binary from `docs/PRICING.md`. No network dependenc
 - Entries without requestId: count once, flag in verbose output
 
 ### No database
-Parse JSONL on every run. No SQLite, no cache files, no state. 1,400+ files parse in under 6 seconds. Simpler mental model, no stale cache bugs.
+Parse JSONL on every run. No SQLite, no cache files, no state. Simpler mental model, no stale cache bugs.
 
 ### NO_COLOR support
 All styling functions accept a `color: bool` parameter. When `NO_COLOR` is set or stdout is not a terminal, all ANSI codes are suppressed. Chip heroes fall back to `[ value ]` bracket notation.
@@ -160,9 +162,13 @@ tempfile = "3"
 
 ## Performance
 
+Benchmarked on Apple M4 Max, 36GB RAM, 54 days of Claude Code usage (1,420 JSONL files, 101K entries):
+
 | Metric | Measured |
 |---|---|
-| Parse 1,420 JSONL files | ~6 seconds |
+| Full pipeline (1,420 files) | ~6 seconds |
 | 110 tests | < 1 second |
 | Binary size (release) | ~4 MB |
 | Zero network requests | Always |
+
+*Timings scale with dataset size. A few days of usage processes in under a second.*
