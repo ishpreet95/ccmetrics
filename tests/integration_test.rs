@@ -406,3 +406,154 @@ fn test_json_no_filter_field_when_unfiltered() {
         "Unfiltered JSON should not have filter field"
     );
 }
+
+// --- Sprint 2: by_project, daily, session ---
+
+#[test]
+fn test_by_project_in_json() {
+    let (stdout, _stderr, success) =
+        run_cc_metrics(&["--path", fixtures_path().to_str().unwrap(), "--json"]);
+
+    assert!(success);
+    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert!(
+        json.get("by_project").is_some(),
+        "JSON should have by_project field"
+    );
+    let by_project = json["by_project"].as_array().unwrap();
+    // Should have at least 1 project from fixtures
+    assert!(!by_project.is_empty(), "Should have at least 1 project");
+    // Each project should have expected fields
+    for p in by_project {
+        assert!(p.get("project").is_some(), "project field");
+        assert!(p.get("sessions").is_some(), "sessions field");
+        assert!(p.get("requests").is_some(), "requests field");
+        assert!(p.get("cost").is_some(), "cost field");
+    }
+}
+
+#[test]
+fn test_daily_subcommand() {
+    let (stdout, _stderr, success) = run_cc_metrics(&[
+        "--path",
+        fixtures_path().to_str().unwrap(),
+        "--quiet",
+        "daily",
+    ]);
+
+    assert!(success, "ccmetrics daily should succeed");
+    assert!(
+        stdout.contains("Daily breakdown"),
+        "Should show daily header"
+    );
+    assert!(stdout.contains("Date"), "Should have Date column");
+    assert!(stdout.contains("Avg:"), "Should show average line");
+}
+
+#[test]
+fn test_daily_json() {
+    let (stdout, _stderr, success) = run_cc_metrics(&[
+        "--path",
+        fixtures_path().to_str().unwrap(),
+        "--json",
+        "daily",
+    ]);
+
+    assert!(success, "ccmetrics daily --json should succeed");
+    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert!(
+        json.get("daily").is_some(),
+        "Daily JSON should have daily array"
+    );
+    let daily = json["daily"].as_array().unwrap();
+    assert!(!daily.is_empty(), "Should have at least 1 day");
+    for d in daily {
+        assert!(d.get("date").is_some(), "date field");
+        assert!(d.get("requests").is_some(), "requests field");
+        assert!(d.get("cost").is_some(), "cost field");
+    }
+}
+
+#[test]
+fn test_session_list_subcommand() {
+    let (stdout, _stderr, success) = run_cc_metrics(&[
+        "--path",
+        fixtures_path().to_str().unwrap(),
+        "--quiet",
+        "session",
+    ]);
+
+    assert!(success, "ccmetrics session should succeed");
+    assert!(
+        stdout.contains("Recent sessions"),
+        "Should show session list header"
+    );
+    assert!(
+        stdout.contains("Session ID"),
+        "Should have Session ID column"
+    );
+}
+
+#[test]
+fn test_session_list_json() {
+    let (stdout, _stderr, success) = run_cc_metrics(&[
+        "--path",
+        fixtures_path().to_str().unwrap(),
+        "--json",
+        "session",
+    ]);
+
+    assert!(success, "ccmetrics session --json should succeed");
+    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert!(
+        json.get("sessions").is_some(),
+        "Session JSON should have sessions array"
+    );
+    let sessions = json["sessions"].as_array().unwrap();
+    assert!(!sessions.is_empty(), "Should have at least 1 session");
+    for s in sessions {
+        assert!(s.get("session_id").is_some(), "session_id field");
+        assert!(s.get("date").is_some(), "date field");
+        assert!(s.get("cost").is_some(), "cost field");
+        assert!(s.get("subagent_spawns").is_some(), "subagent_spawns field");
+        assert!(
+            s.get("cache_read_tokens").is_some(),
+            "cache_read_tokens field"
+        );
+        assert!(
+            s.get("cache_write_5m_tokens").is_some(),
+            "cache_write_5m_tokens field"
+        );
+    }
+}
+
+#[test]
+fn test_session_drill_down_no_match() {
+    let (_stdout, stderr, success) = run_cc_metrics(&[
+        "--path",
+        fixtures_path().to_str().unwrap(),
+        "session",
+        "nonexistent-session-id-12345",
+    ]);
+
+    assert!(!success, "Non-existent session ID should fail");
+    assert!(
+        stderr.contains("No session found"),
+        "Should show no match message"
+    );
+}
+
+#[test]
+fn test_daily_with_filter() {
+    let (stdout, _stderr, success) = run_cc_metrics(&[
+        "--path",
+        fixtures_path().to_str().unwrap(),
+        "--quiet",
+        "--model",
+        "opus",
+        "daily",
+    ]);
+
+    assert!(success, "ccmetrics daily --model opus should succeed");
+    assert!(stdout.contains("filtered"), "Should show filter indicator");
+}

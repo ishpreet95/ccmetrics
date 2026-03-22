@@ -77,6 +77,45 @@ pub struct ModelBreakdown {
     pub cost: f64,
 }
 
+/// A single session's aggregated stats for the session list view.
+#[derive(Debug, Clone)]
+pub struct SessionBreakdown {
+    pub session_id: String,
+    pub date: String,
+    pub project: String,
+    pub requests: usize,
+    pub subagent_spawns: usize,
+    pub primary_model: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub cache_write_5m_tokens: u64,
+    pub cache_write_1h_tokens: u64,
+    pub cost: f64,
+    pub duration_minutes: Option<u64>,
+}
+
+/// A single day's aggregated stats for the daily view.
+#[derive(Debug, Clone)]
+pub struct DayBreakdown {
+    pub date: String,
+    pub requests: usize,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cost: f64,
+}
+
+/// Per-project token and cost breakdown.
+#[derive(Debug, Clone)]
+pub struct ProjectBreakdown {
+    pub project: String,
+    pub sessions: usize,
+    pub requests: usize,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cost: f64,
+}
+
 /// Aggregated summary of all usage.
 #[derive(Debug)]
 pub struct Summary {
@@ -104,6 +143,7 @@ pub struct Summary {
     pub subagent_input_output_tokens: u64,
     pub subagent_cost: f64,
     pub by_model: Vec<ModelBreakdown>,
+    pub by_project: Vec<ProjectBreakdown>,
 }
 
 /// A non-fatal warning accumulated during processing.

@@ -3,6 +3,8 @@ use serde::Serialize;
 use crate::filters::Filters;
 use crate::types::Summary;
 
+use super::round2;
+
 #[derive(Serialize)]
 pub struct JsonOutput {
     pub version: String,
@@ -15,6 +17,7 @@ pub struct JsonOutput {
     pub cost: CostOutput,
     pub split: SplitOutput,
     pub by_model: Vec<ModelOutput>,
+    pub by_project: Vec<ProjectOutput>,
 }
 
 #[derive(Serialize)]
@@ -96,6 +99,16 @@ pub struct ModelOutput {
     pub cache_read_tokens: u64,
     pub cache_write_5m_tokens: u64,
     pub cache_write_1h_tokens: u64,
+    pub cost: f64,
+}
+
+#[derive(Serialize)]
+pub struct ProjectOutput {
+    pub project: String,
+    pub sessions: usize,
+    pub requests: usize,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
     pub cost: f64,
 }
 
@@ -185,11 +198,19 @@ pub fn render(summary: &Summary, filters: &Filters) -> serde_json::Result<String
                 cost: round2(m.cost),
             })
             .collect(),
+        by_project: summary
+            .by_project
+            .iter()
+            .map(|p| ProjectOutput {
+                project: p.project.clone(),
+                sessions: p.sessions,
+                requests: p.requests,
+                input_tokens: p.input_tokens,
+                output_tokens: p.output_tokens,
+                cost: round2(p.cost),
+            })
+            .collect(),
     };
 
     serde_json::to_string_pretty(&output)
-}
-
-fn round2(v: f64) -> f64 {
-    (v * 100.0).round() / 100.0
 }

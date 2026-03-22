@@ -3,7 +3,20 @@ use std::collections::{HashMap, HashSet};
 use chrono::Utc;
 
 use crate::pricing;
-use crate::types::{CostBreakdown, ModelBreakdown, ParseStats, Summary, UsageEntry};
+use crate::types::{
+    CostBreakdown, DayBreakdown, ModelBreakdown, ParseStats, ProjectBreakdown, SessionBreakdown,
+    Summary, UsageEntry,
+};
+
+/// Per-project accumulator used during the analysis loop.
+#[derive(Default)]
+struct ProjectAccum {
+    sessions: HashSet<String>,
+    requests: usize,
+    input: u64,
+    output: u64,
+    cost: f64,
+}
 
 /// Per-model accumulator used during the analysis loop.
 #[derive(Default)]
@@ -35,6 +48,7 @@ pub fn analyze(entries: &[UsageEntry], stats: &ParseStats) -> Summary {
     let mut sub_cost: f64 = 0.0;
 
     let mut model_map: HashMap<String, ModelAccum> = HashMap::new();
+    let mut project_map: HashMap<String, ProjectAccum> = HashMap::new();
 
     let mut sessions: HashSet<String> = HashSet::new();
     let mut projects: HashSet<String> = HashSet::new();
@@ -69,6 +83,14 @@ pub fn analyze(entries: &[UsageEntry], stats: &ParseStats) -> Summary {
         ma.cache_write_5m += entry.cache_write_5m_tokens;
         ma.cache_write_1h += entry.cache_write_1h_tokens;
         ma.cost += cost.total();
+
+        // Accumulate per-project stats
+        let pa = project_map.entry(entry.project_path.clone()).or_default();
+        pa.sessions.insert(entry.session_id.clone());
+        pa.requests += 1;
+        pa.input += entry.input_tokens;
+        pa.output += entry.output_tokens;
+        pa.cost += cost.total();
 
         total_cost += cost;
 
@@ -105,7 +127,21 @@ pub fn analyze(entries: &[UsageEntry], stats: &ParseStats) -> Summary {
             cost: a.cost,
         })
         .collect();
-    by_model.sort_by(|a, b| b.cost.total_cmp(&a.cost));
+    by_model.sort_by(|a, b| b.cost.total_cmp(&a.cost).then(a.model.cmp(&b.model)));
+
+    // Convert per-project map to sorted Vec<ProjectBreakdown>
+    let mut by_project: Vec<ProjectBreakdown> = project_map
+        .into_iter()
+        .map(|(project, a)| ProjectBreakdown {
+            project,
+            sessions: a.sessions.len(),
+            requests: a.requests,
+            input_tokens: a.input,
+            output_tokens: a.output,
+            cost: a.cost,
+        })
+        .collect();
+    by_project.sort_by(|a, b| b.cost.total_cmp(&a.cost).then(a.project.cmp(&b.project)));
 
     let unique_requests = entries.len();
     // Use pre-filter unique count for dedup ratio so it's not inflated by filtering
@@ -145,7 +181,147 @@ pub fn analyze(entries: &[UsageEntry], stats: &ParseStats) -> Summary {
         subagent_input_output_tokens: sub_io_tokens,
         subagent_cost: sub_cost,
         by_model,
+        by_project,
     }
+}
+
+/// Per-day accumulator used during the daily analysis.
+#[derive(Default)]
+struct DayAccum {
+    requests: usize,
+    input: u64,
+    output: u64,
+    cost: f64,
+}
+
+/// Group deduplicated entries by day and produce daily breakdowns.
+pub fn analyze_daily(entries: &[UsageEntry]) -> Vec<DayBreakdown> {
+    let mut day_map: HashMap<String, DayAccum> = HashMap::new();
+
+    for entry in entries {
+        // Skip sentinel timestamps (UNIX_EPOCH) — same guard as analyze()
+        if entry.timestamp.timestamp() <= 0 {
+            continue;
+        }
+        let date_str = entry.timestamp.format("%Y-%m-%d").to_string();
+        let cost = pricing::calculate_cost(entry).total();
+        let acc = day_map.entry(date_str).or_default();
+        acc.requests += 1;
+        acc.input += entry.input_tokens;
+        acc.output += entry.output_tokens;
+        acc.cost += cost;
+    }
+
+    let mut days: Vec<DayBreakdown> = day_map
+        .into_iter()
+        .map(|(date, a)| DayBreakdown {
+            date,
+            requests: a.requests,
+            input_tokens: a.input,
+            output_tokens: a.output,
+            cost: a.cost,
+        })
+        .collect();
+
+    // Sort by ISO date descending (most recent first)
+    days.sort_by(|a, b| b.date.cmp(&a.date));
+    days
+}
+
+/// Per-session accumulator.
+#[derive(Default)]
+struct SessionAccum {
+    project: String,
+    requests: usize,
+    subagent_spawns: usize,
+    input: u64,
+    output: u64,
+    cache_read: u64,
+    cache_write_5m: u64,
+    cache_write_1h: u64,
+    cost: f64,
+    model_counts: HashMap<String, usize>,
+    first_ts: Option<chrono::DateTime<Utc>>,
+    last_ts: Option<chrono::DateTime<Utc>>,
+}
+
+/// Group deduplicated entries by session and produce session breakdowns.
+pub fn analyze_sessions(entries: &[UsageEntry]) -> Vec<SessionBreakdown> {
+    let mut session_map: HashMap<String, SessionAccum> = HashMap::new();
+
+    for entry in entries {
+        let acc = session_map
+            .entry(entry.session_id.clone())
+            .or_insert_with(|| SessionAccum {
+                project: entry.project_path.clone(),
+                ..Default::default()
+            });
+        acc.requests += 1;
+        if entry.is_sidechain {
+            acc.subagent_spawns += 1;
+        }
+        acc.input += entry.input_tokens;
+        acc.output += entry.output_tokens;
+        acc.cache_read += entry.cache_read_input_tokens;
+        acc.cache_write_5m += entry.cache_write_5m_tokens;
+        acc.cache_write_1h += entry.cache_write_1h_tokens;
+        acc.cost += pricing::calculate_cost(entry).total();
+        *acc.model_counts.entry(entry.model.clone()).or_default() += 1;
+
+        let ts = entry.timestamp;
+        if ts.timestamp() > 0 {
+            acc.first_ts = Some(acc.first_ts.map_or(ts, |prev| prev.min(ts)));
+            acc.last_ts = Some(acc.last_ts.map_or(ts, |prev| prev.max(ts)));
+        }
+    }
+
+    let mut sessions: Vec<SessionBreakdown> = session_map
+        .into_iter()
+        .map(|(session_id, a)| {
+            // Primary model = the one with the most requests
+            let primary_model = a
+                .model_counts
+                .into_iter()
+                .max_by_key(|(_, count)| *count)
+                .map(|(model, _)| model)
+                .unwrap_or_default();
+
+            let date = a
+                .first_ts
+                .map(|ts| ts.format("%Y-%m-%d").to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+
+            let duration_minutes = match (a.first_ts, a.last_ts) {
+                (Some(f), Some(l)) => Some(l.signed_duration_since(f).num_minutes().max(0) as u64),
+                _ => None,
+            };
+
+            SessionBreakdown {
+                session_id,
+                date,
+                project: a.project,
+                requests: a.requests,
+                subagent_spawns: a.subagent_spawns,
+                primary_model,
+                input_tokens: a.input,
+                output_tokens: a.output,
+                cache_read_tokens: a.cache_read,
+                cache_write_5m_tokens: a.cache_write_5m,
+                cache_write_1h_tokens: a.cache_write_1h,
+                cost: a.cost,
+                duration_minutes,
+            }
+        })
+        .collect();
+
+    // Sort by date descending, then cost descending, then session_id for stability
+    sessions.sort_by(|a, b| {
+        b.date
+            .cmp(&a.date)
+            .then(b.cost.total_cmp(&a.cost))
+            .then(a.session_id.cmp(&b.session_id))
+    });
+    sessions
 }
 
 #[cfg(test)]
@@ -418,5 +594,168 @@ mod tests {
         let total_output: u64 = summary.by_model.iter().map(|m| m.output_tokens).sum();
         assert_eq!(total_input, summary.input_tokens);
         assert_eq!(total_output, summary.output_tokens);
+    }
+
+    fn make_entry_full(
+        model: &str,
+        input: u64,
+        output: u64,
+        timestamp: DateTime<Utc>,
+        session_id: &str,
+        project: &str,
+    ) -> UsageEntry {
+        let mut e = make_entry(model, input, output, timestamp);
+        e.session_id = session_id.to_string();
+        e.project_path = project.to_string();
+        e
+    }
+
+    // --- by_project tests ---
+
+    #[test]
+    fn test_by_project_aggregation() {
+        let ts = Utc.with_ymd_and_hms(2026, 3, 20, 10, 0, 0).unwrap();
+
+        let entries = vec![
+            make_entry_full("claude-opus-4-6", 1000, 500, ts, "s1", "/proj-a"),
+            make_entry_full("claude-opus-4-6", 2000, 300, ts, "s1", "/proj-a"),
+            make_entry_full("claude-opus-4-6", 500, 100, ts, "s2", "/proj-b"),
+        ];
+
+        let stats = ParseStats {
+            assistant_lines: 3,
+            ..Default::default()
+        };
+
+        let summary = analyze(&entries, &stats);
+
+        assert_eq!(summary.by_project.len(), 2);
+        // Sorted by cost descending — proj-a has more tokens
+        assert_eq!(summary.by_project[0].project, "/proj-a");
+        assert_eq!(summary.by_project[0].requests, 2);
+        assert_eq!(summary.by_project[0].sessions, 1); // both s1
+        assert_eq!(summary.by_project[0].input_tokens, 3000);
+        assert_eq!(summary.by_project[0].output_tokens, 800);
+
+        assert_eq!(summary.by_project[1].project, "/proj-b");
+        assert_eq!(summary.by_project[1].requests, 1);
+        assert_eq!(summary.by_project[1].sessions, 1); // s2
+    }
+
+    #[test]
+    fn test_by_project_multiple_sessions_counted() {
+        let ts = Utc.with_ymd_and_hms(2026, 3, 20, 10, 0, 0).unwrap();
+
+        let entries = vec![
+            make_entry_full("claude-opus-4-6", 100, 50, ts, "s1", "/proj-a"),
+            make_entry_full("claude-opus-4-6", 100, 50, ts, "s2", "/proj-a"),
+            make_entry_full("claude-opus-4-6", 100, 50, ts, "s3", "/proj-a"),
+        ];
+
+        let stats = ParseStats {
+            assistant_lines: 3,
+            ..Default::default()
+        };
+
+        let summary = analyze(&entries, &stats);
+
+        assert_eq!(summary.by_project.len(), 1);
+        assert_eq!(summary.by_project[0].sessions, 3);
+        assert_eq!(summary.by_project[0].requests, 3);
+    }
+
+    // --- analyze_daily tests ---
+
+    #[test]
+    fn test_daily_groups_by_date() {
+        let day1 = Utc.with_ymd_and_hms(2026, 3, 20, 10, 0, 0).unwrap();
+        let day1_later = Utc.with_ymd_and_hms(2026, 3, 20, 15, 0, 0).unwrap();
+        let day2 = Utc.with_ymd_and_hms(2026, 3, 21, 10, 0, 0).unwrap();
+
+        let entries = vec![
+            make_entry("claude-opus-4-6", 1000, 500, day1),
+            make_entry("claude-opus-4-6", 2000, 300, day1_later),
+            make_entry("claude-opus-4-6", 500, 100, day2),
+        ];
+
+        let days = analyze_daily(&entries);
+
+        assert_eq!(days.len(), 2);
+        // Sorted by date descending
+        assert_eq!(days[0].date, "2026-03-21");
+        assert_eq!(days[0].requests, 1);
+        assert_eq!(days[0].input_tokens, 500);
+
+        assert_eq!(days[1].date, "2026-03-20");
+        assert_eq!(days[1].requests, 2);
+        assert_eq!(days[1].input_tokens, 3000);
+    }
+
+    #[test]
+    fn test_daily_empty() {
+        let days = analyze_daily(&[]);
+        assert!(days.is_empty());
+    }
+
+    // --- analyze_sessions tests ---
+
+    #[test]
+    fn test_sessions_grouped_by_id() {
+        let ts = Utc.with_ymd_and_hms(2026, 3, 20, 10, 0, 0).unwrap();
+
+        let entries = vec![
+            make_entry_full("claude-opus-4-6", 1000, 500, ts, "session-aaa", "/proj-a"),
+            make_entry_full("claude-opus-4-6", 2000, 300, ts, "session-aaa", "/proj-a"),
+            make_entry_full("claude-sonnet-4-6", 500, 100, ts, "session-bbb", "/proj-b"),
+        ];
+
+        let sessions = analyze_sessions(&entries);
+
+        assert_eq!(sessions.len(), 2);
+        // Both sessions are same date, sorted by cost descending
+        let aaa = sessions
+            .iter()
+            .find(|s| s.session_id == "session-aaa")
+            .unwrap();
+        assert_eq!(aaa.requests, 2);
+        assert_eq!(aaa.input_tokens, 3000);
+        assert_eq!(aaa.output_tokens, 800);
+        assert_eq!(aaa.primary_model, "claude-opus-4-6");
+
+        let bbb = sessions
+            .iter()
+            .find(|s| s.session_id == "session-bbb")
+            .unwrap();
+        assert_eq!(bbb.requests, 1);
+        assert_eq!(bbb.project, "/proj-b");
+    }
+
+    #[test]
+    fn test_sessions_subagent_counted() {
+        let ts = Utc.with_ymd_and_hms(2026, 3, 20, 10, 0, 0).unwrap();
+
+        let mut main = make_entry_full("claude-opus-4-6", 1000, 500, ts, "s1", "/proj");
+        let mut sub = make_entry_full("claude-haiku-4-5", 200, 50, ts, "s1", "/proj");
+        sub.is_sidechain = true;
+        main.request_id = "req_main".to_string();
+        sub.request_id = "req_sub".to_string();
+
+        let sessions = analyze_sessions(&[main, sub]);
+
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].requests, 2);
+        assert_eq!(sessions[0].subagent_spawns, 1);
+        // Primary model should be opus (1 req) or haiku (1 req) — tie breaks by model name in HashMap
+        // But both have 1 request, so it's non-deterministic. Just check it's one of them.
+        assert!(
+            sessions[0].primary_model == "claude-opus-4-6"
+                || sessions[0].primary_model == "claude-haiku-4-5"
+        );
+    }
+
+    #[test]
+    fn test_sessions_empty() {
+        let sessions = analyze_sessions(&[]);
+        assert!(sessions.is_empty());
     }
 }

@@ -168,6 +168,36 @@ pub fn render(summary: &Summary, filters: &Filters) -> String {
         output.push('\n');
     }
 
+    // By Project table (only shown when 2+ projects are present)
+    if summary.by_project.len() >= 2 {
+        let mut project_table = Table::new();
+        project_table.set_content_arrangement(ContentArrangement::Dynamic);
+        project_table.load_preset(comfy_table::presets::UTF8_FULL_CONDENSED);
+
+        project_table.set_header(vec![
+            Cell::new("By Project").add_attribute(Attribute::Bold),
+            Cell::new("Sessions").add_attribute(Attribute::Bold),
+            Cell::new("Requests").add_attribute(Attribute::Bold),
+            Cell::new("In+Out Tokens").add_attribute(Attribute::Bold),
+            Cell::new("Cost").add_attribute(Attribute::Bold),
+        ]);
+
+        for p in &summary.by_project {
+            project_table.add_row(vec![
+                Cell::new(&p.project),
+                Cell::new(format_number(p.sessions as u64)).set_alignment(CellAlignment::Right),
+                Cell::new(format_number(p.requests as u64)).set_alignment(CellAlignment::Right),
+                Cell::new(format_number(p.input_tokens + p.output_tokens))
+                    .set_alignment(CellAlignment::Right),
+                Cell::new(format_dollar(p.cost)).set_alignment(CellAlignment::Right),
+            ]);
+        }
+
+        output.push('\n');
+        output.push_str(&project_table.to_string());
+        output.push('\n');
+    }
+
     // Footer
     output.push_str(&format!(
         "\nDedup: {} assistant entries → {} unique requests ({:.2}x reduction)\n",
@@ -194,7 +224,7 @@ pub fn format_number(n: u64) -> String {
 }
 
 /// Format a dollar amount with alignment padding.
-fn format_dollar(amount: f64) -> String {
+pub fn format_dollar(amount: f64) -> String {
     if amount >= 0.01 {
         format!("${:.2}", amount)
     } else if amount > 0.0 {

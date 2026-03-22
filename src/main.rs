@@ -63,6 +63,13 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// Daily breakdown — one row per day
+    Daily,
+    /// List sessions, or drill into one by ID
+    Session {
+        /// Session ID to drill into (prefix match, 8+ chars)
+        id: Option<String>,
+    },
     /// Walk through the methodology on your own data — show your work
     Explain,
 }
@@ -257,9 +264,87 @@ fn main() -> Result<()> {
 
     // Step 6: Route to output mode
     match cli.command {
+        Some(Commands::Daily) => {
+            let days = analysis::analyze_daily(&deduped);
+            if cli.json {
+                let json = output::daily::render_json(&days, &summary.version, &filter)
+                    .context("Failed to serialize JSON")?;
+                println!("{json}");
+            } else {
+                let table = output::daily::render(&days, &summary.version, &filter);
+                print!("{table}");
+            }
+        }
+        Some(Commands::Session { id }) => {
+            let sessions = analysis::analyze_sessions(&deduped);
+            match id {
+                Some(needle) => {
+                    // Prefer exact match, then fall back to prefix match
+                    let exact: Vec<_> =
+                        sessions.iter().filter(|s| s.session_id == needle).collect();
+                    let matches = if exact.is_empty() {
+                        sessions
+                            .iter()
+                            .filter(|s| s.session_id.starts_with(&needle))
+                            .collect()
+                    } else {
+                        exact
+                    };
+
+                    match matches.len() {
+                        0 => {
+                            anyhow::bail!(
+                                "No session found matching '{needle}'. Run 'ccmetrics session' to see available session IDs."
+                            );
+                        }
+                        1 => {
+                            let session = matches[0];
+                            if cli.json {
+                                let json = output::session::render_detail_json(
+                                    session,
+                                    &summary.version,
+                                    &filter,
+                                )
+                                .context("Failed to serialize JSON")?;
+                                println!("{json}");
+                            } else {
+                                let detail = output::session::render_detail(session);
+                                print!("{detail}");
+                            }
+                        }
+                        n => {
+                            let shown = n.min(5);
+                            let mut msg = format!(
+                                "Ambiguous: '{needle}' matches {n} sessions. Provide more characters.\n"
+                            );
+                            for m in &matches[..shown] {
+                                msg.push_str(&format!("  {} ({})\n", &m.session_id, m.date));
+                            }
+                            if n > shown {
+                                msg.push_str(&format!("  ... and {} more\n", n - shown));
+                            }
+                            anyhow::bail!("{}", msg.trim_end());
+                        }
+                    }
+                }
+                None => {
+                    // List mode
+                    if cli.json {
+                        let json =
+                            output::session::render_list_json(&sessions, &summary.version, &filter)
+                                .context("Failed to serialize JSON")?;
+                        println!("{json}");
+                    } else {
+                        let table =
+                            output::session::render_list(&sessions, &summary.version, &filter);
+                        print!("{table}");
+                    }
+                }
+            }
+        }
         Some(Commands::Explain) => {
-            let raw =
-                raw_entries_for_explain.expect("raw entries should be cloned for explain mode");
+            let raw = raw_entries_for_explain
+                .context("internal error: raw entries not captured for explain mode")?;
             let data = explain::build_explain(&raw, &deduped, &summary);
             let rendered = output::explain::render(&data, &summary.version);
             print!("{rendered}");

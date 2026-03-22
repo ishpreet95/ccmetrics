@@ -307,6 +307,7 @@ mod tests {
             subagent_input_output_tokens: 0,
             subagent_cost: 0.0,
             by_model: Vec::new(),
+            by_project: Vec::new(),
         }
     }
 
