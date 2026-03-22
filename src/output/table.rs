@@ -448,10 +448,8 @@ fn render_where_section(summary: &Summary, width: usize, bw: usize, bars: bool, 
 
     // By Project (if 2+ projects)
     if summary.by_project.len() >= 2 {
-        out.push_str(&format!(
-            "\n  {}\n",
-            format!("{} {}", style::accent("▪", color), style::subheader("By project", color)),
-        ));
+        let project_header = format!("{} {}", style::accent("▪", color), style::subheader("By project", color));
+        out.push_str(&format!("\n  {project_header}\n"));
         let max_cost = summary
             .by_project
             .iter()
