@@ -300,6 +300,7 @@ mod tests {
             subagent_requests: 0,
             subagent_input_output_tokens: 0,
             subagent_cost: 0.0,
+            by_model: Vec::new(),
         }
     }
 

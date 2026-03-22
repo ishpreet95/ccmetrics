@@ -28,6 +28,12 @@ fn test_simple_session_table_output() {
     assert!(stdout.contains("Token Breakdown"), "Should show token table");
     assert!(stdout.contains("Main vs Subagent"), "Should show split table");
     assert!(stdout.contains("Dedup:"), "Should show dedup stats");
+
+    // Fixtures use 3 models, so the "By Model" table should appear
+    assert!(stdout.contains("By Model"), "Should show By Model table");
+    assert!(stdout.contains("claude-opus-4-6"), "Should show opus model in By Model table");
+    assert!(stdout.contains("claude-sonnet-4-5"), "Should show sonnet model in By Model table");
+    assert!(stdout.contains("claude-haiku-4-5"), "Should show haiku model in By Model table");
 }
 
 #[test]
@@ -49,6 +55,22 @@ fn test_json_output_structure() {
     assert!(json["tokens"]["input"].as_u64().unwrap() > 0);
     assert!(json["cost"]["total"].as_f64().unwrap() > 0.0);
     assert_eq!(json["cost"]["currency"].as_str().unwrap(), "USD");
+
+    // by_model should be an array with at least 1 entry
+    let by_model = json["by_model"].as_array().expect("by_model should be an array");
+    assert!(!by_model.is_empty(), "by_model should have at least 1 entry");
+
+    // Each entry should have the expected fields
+    for entry in by_model {
+        assert!(entry["model"].is_string(), "model should be a string");
+        assert!(entry["requests"].is_u64(), "requests should be a number");
+        assert!(entry["input_tokens"].is_u64(), "input_tokens should be a number");
+        assert!(entry["output_tokens"].is_u64(), "output_tokens should be a number");
+        assert!(entry["cache_read_tokens"].is_u64(), "cache_read_tokens should be a number");
+        assert!(entry["cache_write_5m_tokens"].is_u64(), "cache_write_5m_tokens should be a number");
+        assert!(entry["cache_write_1h_tokens"].is_u64(), "cache_write_1h_tokens should be a number");
+        assert!(entry["cost"].is_f64(), "cost should be a number");
+    }
 }
 
 #[test]
@@ -172,6 +194,26 @@ fn test_cost_calculation_correctness() {
     assert!(
         (sum - total_cost).abs() < 0.02,
         "Cost breakdown should sum to total (got {sum} vs {total_cost})"
+    );
+
+    // Verify cost.total has no IEEE 754 excess digits (e.g., 0.18000000000000002)
+    let cost_str = json["cost"]["total"].to_string();
+    let decimal_digits = cost_str
+        .split('.')
+        .nth(1)
+        .map(|d| d.len())
+        .unwrap_or(0);
+    assert!(
+        decimal_digits <= 2,
+        "cost.total should have at most 2 decimal places, got '{cost_str}'"
+    );
+
+    // Verify by_model costs sum close to total
+    let by_model = json["by_model"].as_array().unwrap();
+    let model_cost_sum: f64 = by_model.iter().map(|m| m["cost"].as_f64().unwrap()).sum();
+    assert!(
+        (model_cost_sum - total_cost).abs() < 0.02,
+        "by_model costs should sum close to total (got {model_cost_sum} vs {total_cost})"
     );
 }
 

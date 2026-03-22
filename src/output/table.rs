@@ -119,6 +119,36 @@ pub fn render(summary: &Summary) -> String {
     output.push_str(&split_table.to_string());
     output.push('\n');
 
+    // By Model table (only shown when 2+ models are present)
+    if summary.by_model.len() >= 2 {
+        let mut model_table = Table::new();
+        model_table.set_content_arrangement(ContentArrangement::Dynamic);
+        model_table.load_preset(comfy_table::presets::UTF8_FULL_CONDENSED);
+
+        model_table.set_header(vec![
+            Cell::new("By Model").add_attribute(Attribute::Bold),
+            Cell::new("Requests").add_attribute(Attribute::Bold),
+            Cell::new("In+Out Tokens").add_attribute(Attribute::Bold),
+            Cell::new("Cost").add_attribute(Attribute::Bold),
+        ]);
+
+        for m in &summary.by_model {
+            model_table.add_row(vec![
+                Cell::new(&m.model),
+                Cell::new(format_number(m.requests as u64))
+                    .set_alignment(CellAlignment::Right),
+                Cell::new(format_number(m.input_tokens + m.output_tokens))
+                    .set_alignment(CellAlignment::Right),
+                Cell::new(format_dollar(m.cost))
+                    .set_alignment(CellAlignment::Right),
+            ]);
+        }
+
+        output.push('\n');
+        output.push_str(&model_table.to_string());
+        output.push('\n');
+    }
+
     // Footer
     output.push_str(&format!(
         "\nDedup: {} assistant entries → {} unique requests ({:.2}x reduction)\n",

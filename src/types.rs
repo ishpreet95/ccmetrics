@@ -57,6 +57,19 @@ impl std::ops::AddAssign for CostBreakdown {
     }
 }
 
+/// Per-model token and cost breakdown for verifiability.
+#[derive(Debug, Clone)]
+pub struct ModelBreakdown {
+    pub model: String,
+    pub requests: usize,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub cache_write_5m_tokens: u64,
+    pub cache_write_1h_tokens: u64,
+    pub cost: f64,
+}
+
 /// Aggregated summary of all usage.
 #[derive(Debug)]
 pub struct Summary {
@@ -83,6 +96,7 @@ pub struct Summary {
     pub subagent_requests: usize,
     pub subagent_input_output_tokens: u64,
     pub subagent_cost: f64,
+    pub by_model: Vec<ModelBreakdown>,
 }
 
 /// A non-fatal warning accumulated during processing.

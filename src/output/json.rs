@@ -11,6 +11,7 @@ pub struct JsonOutput {
     pub tokens: TokenCounts,
     pub cost: CostOutput,
     pub split: SplitOutput,
+    pub by_model: Vec<ModelOutput>,
 }
 
 #[derive(Serialize)]
@@ -71,6 +72,18 @@ pub struct SplitDetail {
     pub cost: f64,
 }
 
+#[derive(Serialize)]
+pub struct ModelOutput {
+    pub model: String,
+    pub requests: usize,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub cache_write_5m_tokens: u64,
+    pub cache_write_1h_tokens: u64,
+    pub cost: f64,
+}
+
 /// Render the summary as JSON.
 pub fn render(summary: &Summary) -> serde_json::Result<String> {
     let output = JsonOutput {
@@ -97,13 +110,16 @@ pub fn render(summary: &Summary) -> serde_json::Result<String> {
             cache_write_1h: summary.cache_write_1h_tokens,
         },
         cost: CostOutput {
-            // Total is the sum of rounded components to avoid internal inconsistency
-            total: round2(summary.cost.input)
-                + round2(summary.cost.output)
-                + round2(summary.cost.cache_read)
-                + round2(summary.cost.cache_write_5m)
-                + round2(summary.cost.cache_write_1h)
-                + round2(summary.cost.web_search),
+            // Total is the sum of rounded components, then rounded again to avoid
+            // IEEE 754 excess digits (e.g., 0.18000000000000002)
+            total: round2(
+                round2(summary.cost.input)
+                    + round2(summary.cost.output)
+                    + round2(summary.cost.cache_read)
+                    + round2(summary.cost.cache_write_5m)
+                    + round2(summary.cost.cache_write_1h)
+                    + round2(summary.cost.web_search),
+            ),
             by_type: CostByType {
                 input: round2(summary.cost.input),
                 output: round2(summary.cost.output),
@@ -128,6 +144,20 @@ pub fn render(summary: &Summary) -> serde_json::Result<String> {
                 cost: round2(summary.subagent_cost),
             },
         },
+        by_model: summary
+            .by_model
+            .iter()
+            .map(|m| ModelOutput {
+                model: m.model.clone(),
+                requests: m.requests,
+                input_tokens: m.input_tokens,
+                output_tokens: m.output_tokens,
+                cache_read_tokens: m.cache_read_tokens,
+                cache_write_5m_tokens: m.cache_write_5m_tokens,
+                cache_write_1h_tokens: m.cache_write_1h_tokens,
+                cost: round2(m.cost),
+            })
+            .collect(),
     };
 
     serde_json::to_string_pretty(&output)
