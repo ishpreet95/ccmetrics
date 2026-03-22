@@ -3,66 +3,46 @@
 ## Language: Rust
 
 ### Why Rust
-- Single binary, zero runtime dependencies (ccusage requires Node.js)
-- Fast parallel parsing with rayon (claudelytics proves this works at scale)
-- Both ccost and claudelytics chose Rust for the same reasons
-- Good CLI ecosystem (clap for args, comfy-table for output)
+- Single binary, zero runtime dependencies
+- Fast parallel parsing with rayon
+- Good CLI ecosystem (clap for args, comfy-table for tables)
 - Cross-platform binaries (macOS, Linux, Windows)
-
-### Why not alternatives
-- **Python:** Fast to prototype but requires runtime. Could prototype here first, port later.
-- **TypeScript/Bun:** Matches Claude Code's stack but requires runtime.
-- **Go:** Viable but Rust has better precedent in this space.
 
 ## Directory Structure
 
 ```
-cc-metrics/
-  docs/                          # Project documentation
-    VISION.md                    # Product vision
+ccmetrics/
+  docs/
     ARCHITECTURE.md              # This file
+    PRD.md                       # Product requirements (v1.3)
     PRICING.md                   # Embedded pricing reference
+    dashboard.png                # Dashboard screenshot
   src/
-    main.rs                      # CLI entry point (clap)
-    lib.rs                       # Library root
-    scanner/
-      mod.rs                     # File discovery
-      glob.rs                    # Recursive JSONL glob (~/.claude/projects/**/*.jsonl)
-    parser/
-      mod.rs                     # JSONL line parsing
-      message.rs                 # Message type definitions and deserialization
-      usage.rs                   # Usage object extraction
-    dedup/
-      mod.rs                     # Deduplication engine
-      request_id.rs              # requestId-based dedup (primary)
-      strategy.rs                # Dedup strategy trait (extensible)
-    pricing/
-      mod.rs                     # Cost calculation engine
-      models.rs                  # Embedded per-model pricing table
-      modifiers.rs               # Fast mode (6x), data residency (1.1x), long context (2x)
-      cache.rs                   # 5m vs 1h cache write distinction
-    analysis/
-      mod.rs                     # Aggregation and breakdown logic
-      summary.rs                 # Overall summary stats
-      by_model.rs                # Per-model breakdown
-      by_project.rs              # Per-project breakdown
-      by_day.rs                  # Daily breakdown
-      by_session.rs              # Per-session drill-down
-      sidechain.rs               # Main thread vs subagent separation
+    main.rs                      # CLI entry point (clap), subcommand dispatch
+    types.rs                     # Core types: Summary, CostBreakdown, ModelBreakdown, etc.
+    scanner.rs                   # File discovery (~/.claude/projects/**/*.jsonl)
+    parser.rs                    # JSONL line parsing, usage/metadata extraction
+    dedup.rs                     # Streaming chunk dedup (requestId, last-seen-wins)
+    filters.rs                   # Date/model/project filters with date parsing
+    analysis.rs                  # Aggregation: by-model, by-project, daily, session
+    pricing.rs                   # Embedded per-model pricing table with modifiers
+    pipeline.rs                  # Streaming pipeline orchestrator (scan → parse → dedup → filter → calculate)
+    explain.rs                   # Methodology walkthrough data collection
     output/
-      mod.rs                     # Output formatting
-      table.rs                   # Pretty terminal tables
-      json.rs                    # --json output
+      mod.rs                     # Output module root
+      table.rs                   # Boreal Command dashboard (4-section layout)
+      style.rs                   # ANSI styling: chip, hero, accent, dim, bars, insights
+      json.rs                    # --json output (stable machine-readable contract)
+      daily.rs                   # Daily breakdown table (comfy-table)
+      session.rs                 # Session list + detail views (comfy-table)
+      explain.rs                 # Explain mode terminal rendering
   tests/
-    fixtures/                    # Sample JSONL files for testing
-      simple_session.jsonl       # One response, no streaming chunks
+    fixtures/
+      simple_session.jsonl       # One response, no streaming
       streaming_session.jsonl    # Multiple chunks per response
       subagent_session.jsonl     # Subagent with isSidechain: true
-      mixed_models.jsonl         # Multiple models in one session
-    integration/
-      dedup_test.rs              # Verify dedup correctness
-      pricing_test.rs            # Verify cost calculations
-      scanner_test.rs            # Verify file discovery
+      synthetic_and_edge.jsonl   # Synthetic messages, malformed lines
+    integration_test.rs          # 28 integration tests
   Cargo.toml
   README.md
 ```
@@ -70,105 +50,119 @@ cc-metrics/
 ## Data Flow
 
 ```
-Scanner                    Parser                  Dedup                  Analysis              Output
-  │                          │                       │                      │                     │
-  ├─ glob **/*.jsonl  ──►    ├─ parse JSONL    ──►   ├─ group by       ──►  ├─ aggregate    ──►   ├─ table
-  │  (recursive,             │  lines                │  requestId           │  by model,          │  (default)
-  │   includes               ├─ filter to            ├─ keep final         │  project,           ├─ json
-  │   subagents/)            │  type=assistant        │  chunk              │  day,               │  (--json)
-  │                          ├─ extract              │  (stop_reason       │  session             │
-  │                          │  usage object         │   != null)          ├─ separate            │
-  │                          ├─ extract              │                     │  main vs             │
-  │                          │  metadata             │                     │  subagent            │
-  │                          │  (model, sidechain,   │                     ├─ calculate           │
-  │                          │   speed, geo)         │                     │  costs               │
-  │                          │                       │                     │  (per-model,         │
-  │                          │                       │                     │   per-type)           │
+Scanner          Parser            Dedup             Filters           Analysis          Output
+  │                │                 │                 │                 │                 │
+  ├─ glob        ► ├─ parse JSONL  ► ├─ group by    ► ├─ date range  ► ├─ aggregate    ► ├─ table
+  │  **/*.jsonl    │  lines          │  requestId     │  --since/      │  by model,      │  (dashboard)
+  │  (recursive,   ├─ filter to      ├─ keep final   │  --until       │  project,       ├─ json
+  │   includes     │  assistant      │  chunk         ├─ model match  │  day, session   │  (--json)
+  │   subagents/)  ├─ extract        │  (stop_reason  ├─ project      ├─ separate       ├─ daily
+  │                │  usage +        │   != null)     │  match        │  main vs        ├─ session
+  │                │  metadata       │                │               │  subagent       ├─ explain
+  │                │                 │                │               ├─ calculate      │
+  │                │                 │                │               │  costs          │
+  │                │                 │                │               │  (per-model)    │
 ```
 
-## CLI Interface (planned)
+## Pipeline
+
+The streaming pipeline (`pipeline.rs`) orchestrates the data flow with real-time progress output to stderr:
+
+```
+✔ Found 1420 files (176 main + 1244 subagent)     (85ms)
+✔ 101412 assistant entries, 2 skipped, 74 excluded (5569ms)
+✔ 37152 unique requests (2.7x reduction)           (248ms)
+✔ $2879.75 total (5 models, 5 token types)         (84ms)
+```
+
+Each step reports timing and key stats. Suppressed with `--quiet`.
+
+## Dashboard Design: Boreal Command
+
+The default output (`output/table.rs` + `output/style.rs`) renders a 4-section terminal dashboard:
+
+```
+⊡ YOUR WORK  →  Deduplicated token totals, input/output breakdown
+¤ COST        →  API-equivalent cost estimate, proportional bars
+↻ CACHE       →  Cache efficiency, savings, read/write volume
+⊕ WHERE IT GOES → Main/subagent split, by-model, by-project
+```
+
+### Visual elements
+- **Chip heroes** — accent background + dark text for key numbers (`style::chip`)
+- **Section rules** — full terminal width, dim `───` with accent title + semantic icon
+- **Proportional bars** — `████░░░░` showing relative proportions
+- **Insights** — colored severity dots (green/yellow/red) with contextual messages
+- **Right-aligned columns** — consistent 2 decimal places for vertical scanning
+- **Unicode symbols** — `◇ ◆ ▪` for subheader differentiation
+
+### Color palette (ANSI 256)
+| Role | Code | Color |
+|------|------|-------|
+| Accent (heroes, bars) | 151 | Sage-mint `#afd7af` |
+| Values (data) | 254 | Near-white `#e4e4e4` |
+| Labels, rules | DIM | Dimmed default |
+| Descriptions | DIM+ITALIC | Subtle italic |
+| Chip background | 48;5;151 | Sage-mint bg |
+| Chip text | 38;5;16 | True black |
+
+## CLI Interface
 
 ```bash
-# Default: overall summary
-cc-metrics
+ccmetrics                        # Boreal Command dashboard
+ccmetrics daily                  # Daily breakdown (comfy-table)
+ccmetrics session                # List 20 most recent sessions
+ccmetrics session <id>           # Drill into a session by ID (prefix match)
+ccmetrics explain                # Methodology walkthrough on your data
 
-# Time-scoped views
-cc-metrics today
-cc-metrics yesterday
-cc-metrics daily                  # last 7 days
-cc-metrics daily --days 30
-
-# Breakdown views
-cc-metrics model                  # per-model breakdown
-cc-metrics project                # per-project breakdown
-cc-metrics session [id]           # drill into a session
-
-# Filters
-cc-metrics --model opus           # filter to specific model
-cc-metrics --since 2026-03-01     # date range
-cc-metrics --until 2026-03-15
-cc-metrics --main-only            # exclude subagent usage
-cc-metrics --subagents-only       # only subagent usage
+# Filters (work with all subcommands)
+ccmetrics --since 7d             # Last 7 days (also: 2w, 30d, today, ISO dates)
+ccmetrics --until 2026-03-15     # Up to a date
+ccmetrics --model opus           # Filter by model (substring, case-insensitive)
+ccmetrics --project myapp        # Filter by project name
 
 # Output
-cc-metrics --json                 # machine-readable
-cc-metrics --verbose              # include cache breakdown details
-
-# Meta
-cc-metrics --version
-cc-metrics --help
-cc-metrics verify                 # run self-check against stats-cache.json
+ccmetrics --json                 # Machine-readable JSON
+ccmetrics --verbose              # Detailed stats
+ccmetrics --quiet                # Suppress pipeline progress
 ```
 
 ## Key Design Decisions
 
 ### Embedded pricing table
-Pricing is compiled into the binary from `docs/PRICING.md`, not fetched from an API. Avoids:
-- Network dependency
-- LiteLLM pricing inaccuracy (ccusage #4 showed 81.9% match rate)
-- Privacy concerns (no outbound requests)
-
-Updated with each release. Users can override with `--pricing-file` if needed.
+Pricing is compiled into the binary from `docs/PRICING.md`. No network dependency, no LiteLLM inaccuracy, no privacy concerns. Updated with each release.
 
 ### Dedup: requestId, last-seen-wins
 - Primary key: `requestId`
-- Fallback: `message.id` (1:1 equivalent in all observed data)
 - Strategy: keep the entry with `stop_reason != null` (final chunk with real output_tokens)
-- Entries without requestId or message.id: count once, flag in verbose output
+- Entries without requestId: count once, flag in verbose output
 
 ### No database
-Parse JSONL on every run. No SQLite, no cache files, no state.
-- Simpler mental model
-- No stale cache bugs
-- 1,337 files parse in <1 second with rayon
-- If performance becomes an issue, add optional caching later
+Parse JSONL on every run. No SQLite, no cache files, no state. 1,400+ files parse in under 6 seconds. Simpler mental model, no stale cache bugs.
 
-### Cross-reference with stats-cache.json
-The `verify` command compares our numbers against `/stats`'s stats-cache.json to validate:
-- Our input + output total should approximate stats-cache's total (within margin from ongoing sessions)
-- Discrepancies flagged with explanations
+### NO_COLOR support
+All styling functions accept a `color: bool` parameter. When `NO_COLOR` is set or stdout is not a terminal, all ANSI codes are suppressed. Chip heroes fall back to `[ value ]` bracket notation.
 
-## Dependencies (minimal)
+## Dependencies
 
 ```toml
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-rayon = "1"
 chrono = { version = "0.4", features = ["serde"] }
-glob = "0.3"
 comfy-table = "7"
+glob = "0.3"
 
 [dev-dependencies]
 tempfile = "3"
 ```
 
-## Performance Targets
+## Performance
 
-| Metric | Target |
+| Metric | Measured |
 |---|---|
-| Parse 1,337 JSONL files | < 1 second |
-| Binary size | < 5 MB |
-| Memory usage | < 50 MB peak |
-| Zero network requests | Always (embedded pricing) |
+| Parse 1,420 JSONL files | ~6 seconds |
+| 110 tests | < 1 second |
+| Binary size (release) | ~4 MB |
+| Zero network requests | Always |

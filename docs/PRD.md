@@ -1,11 +1,9 @@
-# Product Requirements Document: cc-metrics
-
-> Working name. Product name candidates: `cctrue`, `cc-metrics`, `ccreal`, `cchonest`
+# Product Requirements Document: ccmetrics
 
 **Version:** 1.3
 **Date:** 2026-03-22
 **Author:** Ishpreet (owner, sole contributor)
-**Status:** Ready for implementation
+**Status:** v0.1.0 published on crates.io — Sprints 1-3 complete, UX pass shipped
 **Scoring History:** `evaluations/prd/2026-03-22-prd-score-v1.md` (v1.0: 60/100), `evaluations/prd/2026-03-22-prd-score-v1.1.md` (v1.1: 78/100)
 
 ### Changelog
