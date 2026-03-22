@@ -1,0 +1,8 @@
+# Build artifacts
+/target/
+
+# OS files
+.DS_Store
+
+# Claude Code session data
+.claude/
