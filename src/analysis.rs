@@ -100,3 +100,63 @@ pub fn analyze(entries: &[UsageEntry], stats: &ParseStats) -> Summary {
         subagent_cost: sub_cost,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::Speed;
+    use chrono::{DateTime, TimeZone, Utc};
+    use std::path::PathBuf;
+
+    fn make_entry(model: &str, input: u64, output: u64, timestamp: DateTime<Utc>) -> UsageEntry {
+        UsageEntry {
+            request_id: "req_1".to_string(),
+            session_id: "s1".to_string(),
+            model: model.to_string(),
+            is_sidechain: false,
+            timestamp,
+            input_tokens: input,
+            output_tokens: output,
+            cache_read_input_tokens: 0,
+            cache_write_5m_tokens: 0,
+            cache_write_1h_tokens: 0,
+            speed: Speed::Standard,
+            inference_geo: None,
+            web_search_requests: 0,
+            web_fetch_requests: 0,
+            source_file: PathBuf::from("test.jsonl"),
+            project_path: "/test".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_epoch_timestamp_excluded_from_range() {
+        // An entry with UNIX_EPOCH timestamp should NOT affect first_session/last_session.
+        let epoch = DateTime::UNIX_EPOCH;
+        let real_ts = Utc.with_ymd_and_hms(2026, 3, 20, 10, 0, 0).unwrap();
+
+        let entries = vec![
+            make_entry("claude-opus-4-6", 100, 50, epoch),    // sentinel — must be excluded
+            make_entry("claude-opus-4-6", 100, 50, real_ts),  // real timestamp
+        ];
+
+        let stats = ParseStats {
+            assistant_lines: 2,
+            ..Default::default()
+        };
+
+        let summary = analyze(&entries, &stats);
+
+        assert_eq!(
+            summary.first_session,
+            Some(real_ts),
+            "UNIX_EPOCH should not be the first_session"
+        );
+        assert_eq!(
+            summary.last_session,
+            Some(real_ts),
+            "UNIX_EPOCH should not be the last_session"
+        );
+        assert_eq!(summary.days, 1, "Single real day should produce days=1");
+    }
+}

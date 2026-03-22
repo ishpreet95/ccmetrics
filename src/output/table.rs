@@ -132,7 +132,7 @@ pub fn render(summary: &Summary) -> String {
 }
 
 /// Format a number with thousand separators.
-fn format_number(n: u64) -> String {
+pub fn format_number(n: u64) -> String {
     let s = n.to_string();
     let mut result = String::new();
     for (i, c) in s.chars().rev().enumerate() {

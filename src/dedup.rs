@@ -160,4 +160,30 @@ mod tests {
         let (deduped, _) = deduplicate(entries);
         assert_eq!(deduped.len(), 2);
     }
+
+    #[test]
+    fn test_dedup_same_request_id_different_sessions() {
+        // Two entries with same requestId but different sessionId should NOT
+        // be deduped together — the dedup key includes session_id prefix.
+        let entry_s1 = RawEntry {
+            session_id: "session_A".to_string(),
+            ..make_raw("req_shared", Some("end_turn"), 100, 1)
+        };
+        let entry_s2 = RawEntry {
+            session_id: "session_B".to_string(),
+            ..make_raw("req_shared", Some("end_turn"), 200, 2)
+        };
+
+        let (deduped, _) = deduplicate(vec![entry_s1, entry_s2]);
+        assert_eq!(
+            deduped.len(),
+            2,
+            "Same requestId in different sessions should produce 2 deduped entries"
+        );
+
+        // Verify both output_tokens values are present (order may vary due to HashMap)
+        let mut tokens: Vec<u64> = deduped.iter().map(|e| e.output_tokens).collect();
+        tokens.sort();
+        assert_eq!(tokens, vec![100, 200]);
+    }
 }

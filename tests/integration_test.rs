@@ -176,6 +176,25 @@ fn test_cost_calculation_correctness() {
 }
 
 #[test]
+fn test_explain_output() {
+    let (stdout, _stderr, success) = run_cc_metrics(&[
+        "--path",
+        fixtures_path().to_str().unwrap(),
+        "explain",
+    ]);
+
+    assert!(success, "ccmetrics explain should succeed");
+    assert!(
+        stdout.contains("Methodology Walkthrough"),
+        "Should contain walkthrough header"
+    );
+    assert!(stdout.contains("STEP 1"), "Should contain STEP 1");
+    assert!(stdout.contains("STEP 2"), "Should contain STEP 2");
+    assert!(stdout.contains("STEP 3"), "Should contain STEP 3");
+    assert!(stdout.contains("STEP 4"), "Should contain STEP 4");
+}
+
+#[test]
 fn test_empty_path_no_crash() {
     let temp = tempfile::tempdir().unwrap();
     let (stdout, stderr, success) = run_cc_metrics(&[

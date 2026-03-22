@@ -111,7 +111,7 @@ pub fn calculate_cost(entry: &UsageEntry) -> CostBreakdown {
 }
 
 /// Long-context pricing applies to Sonnet 4 and 4.5 only (not Opus, not Haiku).
-fn is_long_context_eligible(model: &str) -> bool {
+pub(crate) fn is_long_context_eligible(model: &str) -> bool {
     model.contains("sonnet-4") || model.contains("sonnet-4-5")
 }
 
@@ -228,5 +228,87 @@ mod tests {
         let rates = lookup_rates("claude-opus-4-6");
         assert!(rates.is_some());
         assert_eq!(rates.unwrap().input, 5.0);
+    }
+
+    #[test]
+    fn test_long_context_only_sonnet() {
+        // Opus and Haiku should NOT get long-context modifier even with >200k input
+        assert!(
+            !is_long_context_eligible("claude-opus-4-6"),
+            "Opus should not be long-context eligible"
+        );
+        assert!(
+            !is_long_context_eligible("claude-opus-4-5"),
+            "Opus 4.5 should not be long-context eligible"
+        );
+        assert!(
+            !is_long_context_eligible("claude-haiku-4-5"),
+            "Haiku should not be long-context eligible"
+        );
+        assert!(
+            !is_long_context_eligible("claude-haiku-4-5-20251001"),
+            "Haiku dated should not be long-context eligible"
+        );
+
+        // Verify Opus >200k input does NOT get 2x multiplier
+        let mut opus_entry = make_entry("claude-opus-4-6", 300_000, 100_000);
+        opus_entry.speed = Speed::Standard;
+        let cost = calculate_cost(&opus_entry);
+        // Without long-context: 300000/1e6 * 5.0 = 1.5
+        let expected_input = 300_000.0 / 1_000_000.0 * 5.0;
+        assert!(
+            (cost.input - expected_input).abs() < 0.001,
+            "Opus input cost should NOT have long-context 2x: got {} expected {}",
+            cost.input,
+            expected_input
+        );
+
+        // Verify Haiku >200k input does NOT get 2x multiplier
+        let haiku_entry = make_entry("claude-haiku-4-5", 300_000, 100_000);
+        let cost = calculate_cost(&haiku_entry);
+        let expected_input = 300_000.0 / 1_000_000.0 * 1.0;
+        assert!(
+            (cost.input - expected_input).abs() < 0.001,
+            "Haiku input cost should NOT have long-context 2x: got {} expected {}",
+            cost.input,
+            expected_input
+        );
+
+        // Verify Sonnet DOES get 2x
+        assert!(
+            is_long_context_eligible("claude-sonnet-4-6"),
+            "Sonnet 4-6 should be long-context eligible"
+        );
+        assert!(
+            is_long_context_eligible("claude-sonnet-4-5"),
+            "Sonnet 4-5 should be long-context eligible"
+        );
+    }
+
+    #[test]
+    fn test_data_residency_only_us() {
+        // inference_geo = "eu" should NOT trigger the 1.1x modifier
+        let mut entry = make_entry("claude-opus-4-6", 1_000_000, 0);
+        entry.inference_geo = Some("eu".to_string());
+        let cost = calculate_cost(&entry);
+        // Without geo modifier: 1M / 1e6 * 5.0 = 5.0
+        assert!(
+            (cost.input - 5.0).abs() < 0.001,
+            "EU geo should NOT trigger data residency modifier: got {} expected 5.0",
+            cost.input
+        );
+    }
+
+    #[test]
+    fn test_data_residency_none_no_modifier() {
+        // inference_geo = None should NOT trigger the modifier
+        let mut entry = make_entry("claude-opus-4-6", 1_000_000, 0);
+        entry.inference_geo = None;
+        let cost = calculate_cost(&entry);
+        assert!(
+            (cost.input - 5.0).abs() < 0.001,
+            "None geo should NOT trigger data residency modifier: got {} expected 5.0",
+            cost.input
+        );
     }
 }
