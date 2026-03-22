@@ -72,10 +72,9 @@ fn select_final_chunk(mut group: Vec<RawEntry>) -> RawEntry {
 
 fn raw_to_usage(raw: RawEntry) -> UsageEntry {
     UsageEntry {
-        request_id: raw
-            .request_id
-            .or(raw.message_id)
-            .unwrap_or_else(|| format!("unknown-{}:{}", raw.source_file.display(), raw.line_number)),
+        request_id: raw.request_id.or(raw.message_id).unwrap_or_else(|| {
+            format!("unknown-{}:{}", raw.source_file.display(), raw.line_number)
+        }),
         session_id: raw.session_id,
         model: raw.model,
         is_sidechain: raw.is_sidechain,
@@ -101,7 +100,12 @@ mod tests {
     use chrono::Utc;
     use std::path::PathBuf;
 
-    fn make_raw(request_id: &str, stop_reason: Option<&str>, output_tokens: u64, line: usize) -> RawEntry {
+    fn make_raw(
+        request_id: &str,
+        stop_reason: Option<&str>,
+        output_tokens: u64,
+        line: usize,
+    ) -> RawEntry {
         RawEntry {
             request_id: Some(request_id.to_string()),
             message_id: Some("msg_123".to_string()),
@@ -128,8 +132,8 @@ mod tests {
     #[test]
     fn test_dedup_keeps_final_chunk() {
         let entries = vec![
-            make_raw("req_1", None, 10, 1),      // intermediate, placeholder
-            make_raw("req_1", None, 10, 2),      // intermediate, placeholder
+            make_raw("req_1", None, 10, 1), // intermediate, placeholder
+            make_raw("req_1", None, 10, 2), // intermediate, placeholder
             make_raw("req_1", Some("end_turn"), 365, 3), // final, real tokens
         ];
 

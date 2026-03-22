@@ -119,9 +119,7 @@ fn find_best_dedup_example(raw_entries: &[RawEntry]) -> Option<DedupExample> {
     // which doesn't illustrate the dedup value proposition.
     let best = groups
         .into_iter()
-        .filter(|(_, chunks)| {
-            chunks.len() >= 3 && chunks.iter().any(|e| e.stop_reason.is_some())
-        })
+        .filter(|(_, chunks)| chunks.len() >= 3 && chunks.iter().any(|e| e.stop_reason.is_some()))
         .min_by_key(|(_, chunks)| {
             let len = chunks.len();
             // Prefer 4-6 chunks (score 0-2), then 3 or 7-10 (score 3-7), then 11+ (score 100+)
@@ -166,7 +164,13 @@ fn find_best_dedup_example(raw_entries: &[RawEntry]) -> Option<DedupExample> {
 fn build_pricing_example(entry: &UsageEntry) -> PricingExample {
     let rates = pricing::lookup_rates(&entry.model);
     let (input_rate, output_rate, cr_rate, c5m_rate, c1h_rate) = match rates {
-        Some(r) => (r.input, r.output, r.cache_read, r.cache_write_5m, r.cache_write_1h),
+        Some(r) => (
+            r.input,
+            r.output,
+            r.cache_read,
+            r.cache_write_5m,
+            r.cache_write_1h,
+        ),
         None => (0.0, 0.0, 0.0, 0.0, 0.0),
     };
 
@@ -215,7 +219,9 @@ fn build_comparison(raw_entries: &[RawEntry], summary: &Summary) -> ComparisonDa
 
     for entry in raw_entries {
         if let Some(key) = entry.request_id.as_deref().or(entry.message_id.as_deref()) {
-            first_seen.entry(key.to_string()).or_insert(entry.output_tokens);
+            first_seen
+                .entry(key.to_string())
+                .or_insert(entry.output_tokens);
         }
         no_dedup_total += entry.output_tokens;
     }
@@ -312,17 +318,35 @@ mod tests {
 
         // 2-chunk group (below minimum of 3, will be filtered out)
         for i in 0..2 {
-            entries.push(make_raw("req_2chunk", "s1", if i == 1 { Some("end_turn") } else { None }, 10, i + 1));
+            entries.push(make_raw(
+                "req_2chunk",
+                "s1",
+                if i == 1 { Some("end_turn") } else { None },
+                10,
+                i + 1,
+            ));
         }
 
         // 5-chunk group (ideal range 4-6)
         for i in 0..5 {
-            entries.push(make_raw("req_5chunk", "s1", if i == 4 { Some("end_turn") } else { None }, 50, 10 + i));
+            entries.push(make_raw(
+                "req_5chunk",
+                "s1",
+                if i == 4 { Some("end_turn") } else { None },
+                50,
+                10 + i,
+            ));
         }
 
         // 20-chunk group (deprioritized as >10)
         for i in 0..20 {
-            entries.push(make_raw("req_20chunk", "s1", if i == 19 { Some("end_turn") } else { None }, 100, 30 + i));
+            entries.push(make_raw(
+                "req_20chunk",
+                "s1",
+                if i == 19 { Some("end_turn") } else { None },
+                100,
+                30 + i,
+            ));
         }
 
         let result = find_best_dedup_example(&entries);
@@ -341,7 +365,10 @@ mod tests {
         }
 
         let result = find_best_dedup_example(&entries);
-        assert!(result.is_none(), "Should skip groups without any stop_reason");
+        assert!(
+            result.is_none(),
+            "Should skip groups without any stop_reason"
+        );
     }
 
     #[test]
@@ -354,7 +381,10 @@ mod tests {
         ];
 
         let result = find_best_dedup_example(&entries);
-        assert!(result.is_none(), "Single-chunk entries should not produce a dedup example");
+        assert!(
+            result.is_none(),
+            "Single-chunk entries should not produce a dedup example"
+        );
     }
 
     #[test]
@@ -362,8 +392,8 @@ mod tests {
         // Create entries where the same requestId appears multiple times.
         // First-seen simulation should pick the first entry's output_tokens.
         let entries = vec![
-            make_raw("req_1", "s1", None, 10, 1),       // first seen for req_1
-            make_raw("req_1", "s1", None, 50, 2),       // duplicate, ignored by first-seen
+            make_raw("req_1", "s1", None, 10, 1), // first seen for req_1
+            make_raw("req_1", "s1", None, 50, 2), // duplicate, ignored by first-seen
             make_raw("req_1", "s1", Some("end_turn"), 365, 3), // duplicate, ignored by first-seen
             make_raw("req_2", "s1", Some("end_turn"), 200, 4), // first seen for req_2
         ];

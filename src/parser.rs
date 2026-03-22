@@ -112,10 +112,7 @@ pub fn parse_jsonl_file(path: &Path, project_path: &str) -> ParseResult {
         };
 
         // Skip synthetic messages
-        let model = message
-            .get("model")
-            .and_then(Value::as_str)
-            .unwrap_or("");
+        let model = message.get("model").and_then(Value::as_str).unwrap_or("");
         if model == "<synthetic>" {
             synthetic_count += 1;
             continue;
@@ -132,7 +129,10 @@ pub fn parse_jsonl_file(path: &Path, project_path: &str) -> ParseResult {
         };
 
         // Extract fields
-        let request_id = value.get("requestId").and_then(Value::as_str).map(String::from);
+        let request_id = value
+            .get("requestId")
+            .and_then(Value::as_str)
+            .map(String::from);
         let message_id = message.get("id").and_then(Value::as_str).map(String::from);
         let session_id = value
             .get("sessionId")
@@ -169,8 +169,14 @@ pub fn parse_jsonl_file(path: &Path, project_path: &str) -> ParseResult {
         };
 
         // Token counts
-        let input_tokens = usage.get("input_tokens").and_then(Value::as_u64).unwrap_or(0);
-        let output_tokens = usage.get("output_tokens").and_then(Value::as_u64).unwrap_or(0);
+        let input_tokens = usage
+            .get("input_tokens")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        let output_tokens = usage
+            .get("output_tokens")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
         let cache_read_input_tokens = usage
             .get("cache_read_input_tokens")
             .and_then(Value::as_u64)

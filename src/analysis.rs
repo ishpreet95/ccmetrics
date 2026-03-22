@@ -5,6 +5,18 @@ use chrono::Utc;
 use crate::pricing;
 use crate::types::{CostBreakdown, ModelBreakdown, ParseStats, Summary, UsageEntry};
 
+/// Per-model accumulator used during the analysis loop.
+#[derive(Default)]
+struct ModelAccum {
+    requests: usize,
+    input: u64,
+    output: u64,
+    cache_read: u64,
+    cache_write_5m: u64,
+    cache_write_1h: u64,
+    cost: f64,
+}
+
 /// Analyze deduplicated entries and produce a summary.
 pub fn analyze(entries: &[UsageEntry], stats: &ParseStats) -> Summary {
     let mut input_tokens: u64 = 0;
@@ -22,8 +34,7 @@ pub fn analyze(entries: &[UsageEntry], stats: &ParseStats) -> Summary {
     let mut sub_io_tokens: u64 = 0;
     let mut sub_cost: f64 = 0.0;
 
-    // Per-model accumulators: (requests, input, output, cache_read, cache_write_5m, cache_write_1h, cost)
-    let mut model_map: HashMap<String, (usize, u64, u64, u64, u64, u64, f64)> = HashMap::new();
+    let mut model_map: HashMap<String, ModelAccum> = HashMap::new();
 
     let mut sessions: HashSet<String> = HashSet::new();
     let mut projects: HashSet<String> = HashSet::new();
@@ -50,14 +61,14 @@ pub fn analyze(entries: &[UsageEntry], stats: &ParseStats) -> Summary {
         }
 
         // Accumulate per-model stats
-        let model_entry = model_map.entry(entry.model.clone()).or_insert((0, 0, 0, 0, 0, 0, 0.0));
-        model_entry.0 += 1;
-        model_entry.1 += entry.input_tokens;
-        model_entry.2 += entry.output_tokens;
-        model_entry.3 += entry.cache_read_input_tokens;
-        model_entry.4 += entry.cache_write_5m_tokens;
-        model_entry.5 += entry.cache_write_1h_tokens;
-        model_entry.6 += cost.total();
+        let ma = model_map.entry(entry.model.clone()).or_default();
+        ma.requests += 1;
+        ma.input += entry.input_tokens;
+        ma.output += entry.output_tokens;
+        ma.cache_read += entry.cache_read_input_tokens;
+        ma.cache_write_5m += entry.cache_write_5m_tokens;
+        ma.cache_write_1h += entry.cache_write_1h_tokens;
+        ma.cost += cost.total();
 
         total_cost += cost;
 
@@ -83,15 +94,15 @@ pub fn analyze(entries: &[UsageEntry], stats: &ParseStats) -> Summary {
     // Convert per-model map to sorted Vec<ModelBreakdown>
     let mut by_model: Vec<ModelBreakdown> = model_map
         .into_iter()
-        .map(|(model, (requests, inp, out, cr, c5m, c1h, cost))| ModelBreakdown {
+        .map(|(model, a)| ModelBreakdown {
             model,
-            requests,
-            input_tokens: inp,
-            output_tokens: out,
-            cache_read_tokens: cr,
-            cache_write_5m_tokens: c5m,
-            cache_write_1h_tokens: c1h,
-            cost,
+            requests: a.requests,
+            input_tokens: a.input,
+            output_tokens: a.output,
+            cache_read_tokens: a.cache_read,
+            cache_write_5m_tokens: a.cache_write_5m,
+            cache_write_1h_tokens: a.cache_write_1h,
+            cost: a.cost,
         })
         .collect();
     by_model.sort_by(|a, b| b.cost.total_cmp(&a.cost));
@@ -166,8 +177,8 @@ mod tests {
         let real_ts = Utc.with_ymd_and_hms(2026, 3, 20, 10, 0, 0).unwrap();
 
         let entries = vec![
-            make_entry("claude-opus-4-6", 100, 50, epoch),    // sentinel — must be excluded
-            make_entry("claude-opus-4-6", 100, 50, real_ts),  // real timestamp
+            make_entry("claude-opus-4-6", 100, 50, epoch), // sentinel — must be excluded
+            make_entry("claude-opus-4-6", 100, 50, real_ts), // real timestamp
         ];
 
         let stats = ParseStats {
@@ -233,8 +244,14 @@ mod tests {
         assert_eq!(model_input, summary.input_tokens);
 
         // Per-model costs should be positive for known models
-        assert!(summary.by_model[0].cost > 0.0, "Opus cost should be positive");
-        assert!(summary.by_model[1].cost > 0.0, "Sonnet cost should be positive");
+        assert!(
+            summary.by_model[0].cost > 0.0,
+            "Opus cost should be positive"
+        );
+        assert!(
+            summary.by_model[1].cost > 0.0,
+            "Sonnet cost should be positive"
+        );
     }
 
     #[test]
@@ -268,16 +285,17 @@ mod tests {
 
         let summary = analyze(&entries, &stats);
 
-        assert!(summary.by_model.is_empty(), "No entries should produce empty by_model");
+        assert!(
+            summary.by_model.is_empty(),
+            "No entries should produce empty by_model"
+        );
     }
 
     #[test]
     fn test_by_model_unknown_model_zero_cost() {
         let ts = Utc.with_ymd_and_hms(2026, 3, 20, 10, 0, 0).unwrap();
 
-        let entries = vec![
-            make_entry("unknown-model-v99", 1_000_000, 500_000, ts),
-        ];
+        let entries = vec![make_entry("unknown-model-v99", 1_000_000, 500_000, ts)];
 
         let stats = ParseStats {
             assistant_lines: 1,
@@ -326,9 +344,18 @@ mod tests {
         assert_eq!(summary.by_model[0].cache_write_1h_tokens, 300);
 
         // Cache tokens per model should equal summary totals
-        assert_eq!(summary.by_model[0].cache_read_tokens, summary.cache_read_tokens);
-        assert_eq!(summary.by_model[0].cache_write_5m_tokens, summary.cache_write_5m_tokens);
-        assert_eq!(summary.by_model[0].cache_write_1h_tokens, summary.cache_write_1h_tokens);
+        assert_eq!(
+            summary.by_model[0].cache_read_tokens,
+            summary.cache_read_tokens
+        );
+        assert_eq!(
+            summary.by_model[0].cache_write_5m_tokens,
+            summary.cache_write_5m_tokens
+        );
+        assert_eq!(
+            summary.by_model[0].cache_write_1h_tokens,
+            summary.cache_write_1h_tokens
+        );
     }
 
     #[test]
@@ -359,13 +386,21 @@ mod tests {
         assert_eq!(summary.by_model.len(), 2);
 
         // Opus should have 2 requests (main + subagent combined)
-        let opus = summary.by_model.iter().find(|m| m.model == "claude-opus-4-6").unwrap();
+        let opus = summary
+            .by_model
+            .iter()
+            .find(|m| m.model == "claude-opus-4-6")
+            .unwrap();
         assert_eq!(opus.requests, 2);
-        assert_eq!(opus.input_tokens, 1800);  // 1000 + 800
-        assert_eq!(opus.output_tokens, 700);  // 500 + 200
+        assert_eq!(opus.input_tokens, 1800); // 1000 + 800
+        assert_eq!(opus.output_tokens, 700); // 500 + 200
 
         // Haiku should have 1 request
-        let haiku = summary.by_model.iter().find(|m| m.model == "claude-haiku-4-5").unwrap();
+        let haiku = summary
+            .by_model
+            .iter()
+            .find(|m| m.model == "claude-haiku-4-5")
+            .unwrap();
         assert_eq!(haiku.requests, 1);
 
         // Meanwhile, main/sub split should correctly separate

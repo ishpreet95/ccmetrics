@@ -24,7 +24,9 @@ pub struct UsageEntry {
     pub speed: Speed,
     pub inference_geo: Option<String>,
     pub web_search_requests: u32,
+    #[allow(dead_code)] // Parsed for Phase 2 web fetch cost tracking
     pub web_fetch_requests: u32,
+    #[allow(dead_code)] // Parsed for Phase 2 session drill-down
     pub source_file: PathBuf,
     pub project_path: String,
 }
@@ -42,7 +44,12 @@ pub struct CostBreakdown {
 
 impl CostBreakdown {
     pub fn total(&self) -> f64 {
-        self.input + self.output + self.cache_read + self.cache_write_5m + self.cache_write_1h + self.web_search
+        self.input
+            + self.output
+            + self.cache_read
+            + self.cache_write_5m
+            + self.cache_write_1h
+            + self.web_search
     }
 }
 
@@ -118,5 +125,6 @@ pub struct ParseStats {
     pub skipped_lines: usize,
     pub no_id_entries: usize,
     pub synthetic_messages: usize,
+    #[allow(dead_code)] // Tracked for Phase 3 verbose warnings
     pub unknown_models: usize,
 }

@@ -45,11 +45,9 @@ enum Commands {
 }
 
 fn default_claude_path() -> PathBuf {
-    PathBuf::from(
-        std::env::var("HOME").unwrap_or_else(|_| ".".to_string()),
-    )
-    .join(".claude")
-    .join("projects")
+    PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()))
+        .join(".claude")
+        .join("projects")
 }
 
 fn main() -> Result<()> {
@@ -69,7 +67,10 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let main_file_count = files.iter().filter(|f| !scanner::is_subagent_path(f)).count();
+    let main_file_count = files
+        .iter()
+        .filter(|f| !scanner::is_subagent_path(f))
+        .count();
     let sub_file_count = files.len() - main_file_count;
 
     // Step 2: Parse all files in parallel
@@ -116,15 +117,15 @@ fn main() -> Result<()> {
     // Step 5: Route to output mode
     match cli.command {
         Some(Commands::Explain) => {
-            let raw = raw_entries_for_explain.expect("raw entries should be cloned for explain mode");
+            let raw =
+                raw_entries_for_explain.expect("raw entries should be cloned for explain mode");
             let data = explain::build_explain(&raw, &deduped, &summary);
             let rendered = output::explain::render(&data, &summary.version);
             print!("{rendered}");
         }
         None => {
             if cli.json {
-                let json = output::json::render(&summary)
-                    .context("Failed to serialize JSON")?;
+                let json = output::json::render(&summary).context("Failed to serialize JSON")?;
                 println!("{json}");
             } else {
                 let table = output::table::render(&summary);
@@ -138,8 +139,14 @@ fn main() -> Result<()> {
                         "Files scanned:     {} ({} main + {} subagent)",
                         stats.total_files, stats.main_files, stats.subagent_files
                     );
-                    println!("Skipped lines:     {} (malformed JSON)", stats.skipped_lines);
-                    println!("No-ID entries:     {} (counted once, not deduplicated)", stats.no_id_entries);
+                    println!(
+                        "Skipped lines:     {} (malformed JSON)",
+                        stats.skipped_lines
+                    );
+                    println!(
+                        "No-ID entries:     {} (counted once, not deduplicated)",
+                        stats.no_id_entries
+                    );
                     println!("Synthetic msgs:    {} (excluded)", stats.synthetic_messages);
 
                     if !all_warnings.is_empty() {

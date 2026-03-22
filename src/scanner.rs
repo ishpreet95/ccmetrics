@@ -39,10 +39,7 @@ pub fn extract_project_path(file_path: &std::path::Path) -> String {
     while let Some(parent) = path.parent() {
         if parent.file_name().map(|n| n == "projects").unwrap_or(false) {
             // `path` is the project directory
-            let dirname = path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy();
+            let dirname = path.file_name().unwrap_or_default().to_string_lossy();
             return decode_project_dirname(&dirname);
         }
         path = parent;

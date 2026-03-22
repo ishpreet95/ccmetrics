@@ -18,36 +18,48 @@ fn run_cc_metrics(args: &[&str]) -> (String, String, bool) {
 
 #[test]
 fn test_simple_session_table_output() {
-    let (stdout, _stderr, success) = run_cc_metrics(&[
-        "--path",
-        fixtures_path().to_str().unwrap(),
-    ]);
+    let (stdout, _stderr, success) = run_cc_metrics(&["--path", fixtures_path().to_str().unwrap()]);
 
     assert!(success, "cc-metrics should succeed");
-    assert!(stdout.contains("ccmetrics v0.1.0"), "Should show version header");
-    assert!(stdout.contains("Token Breakdown"), "Should show token table");
-    assert!(stdout.contains("Main vs Subagent"), "Should show split table");
+    assert!(
+        stdout.contains("ccmetrics v0.1.0"),
+        "Should show version header"
+    );
+    assert!(
+        stdout.contains("Token Breakdown"),
+        "Should show token table"
+    );
+    assert!(
+        stdout.contains("Main vs Subagent"),
+        "Should show split table"
+    );
     assert!(stdout.contains("Dedup:"), "Should show dedup stats");
 
     // Fixtures use 3 models, so the "By Model" table should appear
     assert!(stdout.contains("By Model"), "Should show By Model table");
-    assert!(stdout.contains("claude-opus-4-6"), "Should show opus model in By Model table");
-    assert!(stdout.contains("claude-sonnet-4-5"), "Should show sonnet model in By Model table");
-    assert!(stdout.contains("claude-haiku-4-5"), "Should show haiku model in By Model table");
+    assert!(
+        stdout.contains("claude-opus-4-6"),
+        "Should show opus model in By Model table"
+    );
+    assert!(
+        stdout.contains("claude-sonnet-4-5"),
+        "Should show sonnet model in By Model table"
+    );
+    assert!(
+        stdout.contains("claude-haiku-4-5"),
+        "Should show haiku model in By Model table"
+    );
 }
 
 #[test]
 fn test_json_output_structure() {
-    let (stdout, _stderr, success) = run_cc_metrics(&[
-        "--path",
-        fixtures_path().to_str().unwrap(),
-        "--json",
-    ]);
+    let (stdout, _stderr, success) =
+        run_cc_metrics(&["--path", fixtures_path().to_str().unwrap(), "--json"]);
 
     assert!(success, "ccmetrics --json should succeed");
 
-    let json: serde_json::Value = serde_json::from_str(&stdout)
-        .expect("Output should be valid JSON");
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("Output should be valid JSON");
 
     assert_eq!(json["version"].as_str().unwrap(), "0.1.0");
     assert!(json["data_range"]["days"].as_u64().unwrap() >= 1);
@@ -57,29 +69,46 @@ fn test_json_output_structure() {
     assert_eq!(json["cost"]["currency"].as_str().unwrap(), "USD");
 
     // by_model should be an array with at least 1 entry
-    let by_model = json["by_model"].as_array().expect("by_model should be an array");
-    assert!(!by_model.is_empty(), "by_model should have at least 1 entry");
+    let by_model = json["by_model"]
+        .as_array()
+        .expect("by_model should be an array");
+    assert!(
+        !by_model.is_empty(),
+        "by_model should have at least 1 entry"
+    );
 
     // Each entry should have the expected fields
     for entry in by_model {
         assert!(entry["model"].is_string(), "model should be a string");
         assert!(entry["requests"].is_u64(), "requests should be a number");
-        assert!(entry["input_tokens"].is_u64(), "input_tokens should be a number");
-        assert!(entry["output_tokens"].is_u64(), "output_tokens should be a number");
-        assert!(entry["cache_read_tokens"].is_u64(), "cache_read_tokens should be a number");
-        assert!(entry["cache_write_5m_tokens"].is_u64(), "cache_write_5m_tokens should be a number");
-        assert!(entry["cache_write_1h_tokens"].is_u64(), "cache_write_1h_tokens should be a number");
+        assert!(
+            entry["input_tokens"].is_u64(),
+            "input_tokens should be a number"
+        );
+        assert!(
+            entry["output_tokens"].is_u64(),
+            "output_tokens should be a number"
+        );
+        assert!(
+            entry["cache_read_tokens"].is_u64(),
+            "cache_read_tokens should be a number"
+        );
+        assert!(
+            entry["cache_write_5m_tokens"].is_u64(),
+            "cache_write_5m_tokens should be a number"
+        );
+        assert!(
+            entry["cache_write_1h_tokens"].is_u64(),
+            "cache_write_1h_tokens should be a number"
+        );
         assert!(entry["cost"].is_f64(), "cost should be a number");
     }
 }
 
 #[test]
 fn test_dedup_streaming_chunks() {
-    let (stdout, _stderr, success) = run_cc_metrics(&[
-        "--path",
-        fixtures_path().to_str().unwrap(),
-        "--json",
-    ]);
+    let (stdout, _stderr, success) =
+        run_cc_metrics(&["--path", fixtures_path().to_str().unwrap(), "--json"]);
 
     assert!(success);
     let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
@@ -93,16 +122,16 @@ fn test_dedup_streaming_chunks() {
 
     // Skipped lines should include the malformed JSON line
     let skipped = json["dedup"]["skipped_lines"].as_u64().unwrap();
-    assert!(skipped >= 1, "Should have at least 1 skipped line (malformed JSON)");
+    assert!(
+        skipped >= 1,
+        "Should have at least 1 skipped line (malformed JSON)"
+    );
 }
 
 #[test]
 fn test_subagent_split() {
-    let (stdout, _stderr, success) = run_cc_metrics(&[
-        "--path",
-        fixtures_path().to_str().unwrap(),
-        "--json",
-    ]);
+    let (stdout, _stderr, success) =
+        run_cc_metrics(&["--path", fixtures_path().to_str().unwrap(), "--json"]);
 
     assert!(success);
     let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
@@ -117,11 +146,8 @@ fn test_subagent_split() {
 
 #[test]
 fn test_streaming_dedup_keeps_correct_tokens() {
-    let (stdout, _stderr, success) = run_cc_metrics(&[
-        "--path",
-        fixtures_path().to_str().unwrap(),
-        "--json",
-    ]);
+    let (stdout, _stderr, success) =
+        run_cc_metrics(&["--path", fixtures_path().to_str().unwrap(), "--json"]);
 
     assert!(success);
     let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
@@ -132,16 +158,16 @@ fn test_streaming_dedup_keeps_correct_tokens() {
     // The edge case has output_tokens=200
     // Total output tokens should be 365 + 50 + 200 + 200 = 815
     let output_tokens = json["tokens"]["output"].as_u64().unwrap();
-    assert_eq!(output_tokens, 815, "Output tokens should reflect final chunks only");
+    assert_eq!(
+        output_tokens, 815,
+        "Output tokens should reflect final chunks only"
+    );
 }
 
 #[test]
 fn test_cache_tier_disaggregation() {
-    let (stdout, _stderr, success) = run_cc_metrics(&[
-        "--path",
-        fixtures_path().to_str().unwrap(),
-        "--json",
-    ]);
+    let (stdout, _stderr, success) =
+        run_cc_metrics(&["--path", fixtures_path().to_str().unwrap(), "--json"]);
 
     assert!(success);
     let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
@@ -150,31 +176,37 @@ fn test_cache_tier_disaggregation() {
     let cache_1h = json["tokens"]["cache_write_1h"].as_u64().unwrap();
 
     assert!(cache_5m > 0, "Should have 5m cache writes (from subagent)");
-    assert!(cache_1h > 0, "Should have 1h cache writes (from main thread)");
+    assert!(
+        cache_1h > 0,
+        "Should have 1h cache writes (from main thread)"
+    );
 }
 
 #[test]
 fn test_verbose_output() {
-    let (stdout, _stderr, success) = run_cc_metrics(&[
-        "--path",
-        fixtures_path().to_str().unwrap(),
-        "--verbose",
-    ]);
+    let (stdout, _stderr, success) =
+        run_cc_metrics(&["--path", fixtures_path().to_str().unwrap(), "--verbose"]);
 
     assert!(success);
-    assert!(stdout.contains("Verbose Details"), "Should show verbose section");
+    assert!(
+        stdout.contains("Verbose Details"),
+        "Should show verbose section"
+    );
     assert!(stdout.contains("Files scanned:"), "Should show file count");
-    assert!(stdout.contains("Skipped lines:"), "Should show skipped lines");
-    assert!(stdout.contains("Synthetic msgs:"), "Should show synthetic count");
+    assert!(
+        stdout.contains("Skipped lines:"),
+        "Should show skipped lines"
+    );
+    assert!(
+        stdout.contains("Synthetic msgs:"),
+        "Should show synthetic count"
+    );
 }
 
 #[test]
 fn test_cost_calculation_correctness() {
-    let (stdout, _stderr, success) = run_cc_metrics(&[
-        "--path",
-        fixtures_path().to_str().unwrap(),
-        "--json",
-    ]);
+    let (stdout, _stderr, success) =
+        run_cc_metrics(&["--path", fixtures_path().to_str().unwrap(), "--json"]);
 
     assert!(success);
     let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
@@ -198,11 +230,7 @@ fn test_cost_calculation_correctness() {
 
     // Verify cost.total has no IEEE 754 excess digits (e.g., 0.18000000000000002)
     let cost_str = json["cost"]["total"].to_string();
-    let decimal_digits = cost_str
-        .split('.')
-        .nth(1)
-        .map(|d| d.len())
-        .unwrap_or(0);
+    let decimal_digits = cost_str.split('.').nth(1).map(|d| d.len()).unwrap_or(0);
     assert!(
         decimal_digits <= 2,
         "cost.total should have at most 2 decimal places, got '{cost_str}'"
@@ -219,11 +247,8 @@ fn test_cost_calculation_correctness() {
 
 #[test]
 fn test_explain_output() {
-    let (stdout, _stderr, success) = run_cc_metrics(&[
-        "--path",
-        fixtures_path().to_str().unwrap(),
-        "explain",
-    ]);
+    let (stdout, _stderr, success) =
+        run_cc_metrics(&["--path", fixtures_path().to_str().unwrap(), "explain"]);
 
     assert!(success, "ccmetrics explain should succeed");
     assert!(
@@ -239,10 +264,7 @@ fn test_explain_output() {
 #[test]
 fn test_empty_path_no_crash() {
     let temp = tempfile::tempdir().unwrap();
-    let (stdout, stderr, success) = run_cc_metrics(&[
-        "--path",
-        temp.path().to_str().unwrap(),
-    ]);
+    let (stdout, stderr, success) = run_cc_metrics(&["--path", temp.path().to_str().unwrap()]);
 
     assert!(success, "Should succeed even with no files");
     assert!(

@@ -8,8 +8,12 @@ pub fn render(data: &ExplainData, version: &str) -> String {
     out.push_str(&format!("ccmetrics v{version} — Methodology Walkthrough\n"));
 
     // Step 1: Dedup
-    out.push_str("\n━━━ STEP 1: Streaming Chunk Deduplication ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
-    out.push_str("One API request → multiple JSONL lines. Here's a real example from YOUR data:\n\n");
+    out.push_str(
+        "\n━━━ STEP 1: Streaming Chunk Deduplication ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n",
+    );
+    out.push_str(
+        "One API request → multiple JSONL lines. Here's a real example from YOUR data:\n\n",
+    );
 
     if let Some(ref ex) = data.dedup_example {
         out.push_str(&format!("  requestId: {}\n", ex.request_id));
@@ -22,10 +26,7 @@ pub fn render(data: &ExplainData, version: &str) -> String {
         out.push_str("  ────   ───────────    ─────────────\n");
 
         for (i, chunk) in ex.chunks.iter().enumerate() {
-            let sr = chunk
-                .stop_reason
-                .as_deref()
-                .unwrap_or("null");
+            let sr = chunk.stop_reason.as_deref().unwrap_or("null");
             let marker = if i == ex.kept_index {
                 " ← REAL VALUE ✓"
             } else {
@@ -63,8 +64,7 @@ pub fn render(data: &ExplainData, version: &str) -> String {
         if kept.output_tokens > 0 && first.output_tokens < kept.output_tokens {
             let undercount_pct =
                 (1.0 - first.output_tokens as f64 / kept.output_tokens as f64) * 100.0;
-            let overcount_pct =
-                (sum as f64 / kept.output_tokens as f64 - 1.0) * 100.0;
+            let overcount_pct = (sum as f64 / kept.output_tokens as f64 - 1.0) * 100.0;
             out.push_str(&format!(
                 "\n  Impact: ccusage undercounts by {:.1}%. claudelytics overcounts by {:.1}%.\n",
                 undercount_pct, overcount_pct
@@ -76,7 +76,9 @@ pub fn render(data: &ExplainData, version: &str) -> String {
     }
 
     // Step 2: Pricing
-    out.push_str("\n━━━ STEP 2: Pricing Calculation ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
+    out.push_str(
+        "\n━━━ STEP 2: Pricing Calculation ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n",
+    );
 
     if let Some(ref px) = data.pricing_example {
         out.push_str(&format!(
@@ -91,8 +93,16 @@ pub fn render(data: &ExplainData, version: &str) -> String {
             ("Input", px.input_tokens, px.input_rate),
             ("Output", px.output_tokens, px.output_rate),
             ("Cache read", px.cache_read_tokens, px.cache_read_rate),
-            ("Cache write (5m)", px.cache_write_5m_tokens, px.cache_write_5m_rate),
-            ("Cache write (1h)", px.cache_write_1h_tokens, px.cache_write_1h_rate),
+            (
+                "Cache write (5m)",
+                px.cache_write_5m_tokens,
+                px.cache_write_5m_rate,
+            ),
+            (
+                "Cache write (1h)",
+                px.cache_write_1h_tokens,
+                px.cache_write_1h_rate,
+            ),
         ];
 
         for (label, count, rate) in &rows {
@@ -118,7 +128,9 @@ pub fn render(data: &ExplainData, version: &str) -> String {
     }
 
     // Step 3: Cache tiers
-    out.push_str("\n━━━ STEP 3: Cache Tier Distinction ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
+    out.push_str(
+        "\n━━━ STEP 3: Cache Tier Distinction ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n",
+    );
 
     let ct = &data.cache_tier;
     if ct.total_5m_tokens > 0 && ct.total_1h_tokens > 0 {

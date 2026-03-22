@@ -868,6 +868,7 @@ Add time and dimension slicing subcommands.
 | 2.7 | **Session drill-down** — list sessions or show single session detail                           | Phase 1    | `cc-metrics session [id]`    |
 | 2.8 | **Model filter** — `--model` flag with fuzzy matching (e.g., `opus` matches all Opus variants) | Phase 1    | `--model opus` works         |
 | 2.9 | **Pricing modifiers** — detect `speed: "fast"`, `inference_geo: "us"`, long context            | Phase 1    | Correct modifier application |
+| 2.10 | **CI pipeline** — GitHub Actions workflow: lint, test, build on push/PR (ubuntu + macOS)      | Phase 1    | Automated quality gate       |
 
 ### Phase 3: Polish & Launch
 

@@ -33,9 +33,21 @@ pub fn render(summary: &Summary) -> String {
     let rows = [
         ("Input tokens", summary.input_tokens, summary.cost.input),
         ("Output tokens", summary.output_tokens, summary.cost.output),
-        ("Cache read", summary.cache_read_tokens, summary.cost.cache_read),
-        ("Cache write (5m)", summary.cache_write_5m_tokens, summary.cost.cache_write_5m),
-        ("Cache write (1h)", summary.cache_write_1h_tokens, summary.cost.cache_write_1h),
+        (
+            "Cache read",
+            summary.cache_read_tokens,
+            summary.cost.cache_read,
+        ),
+        (
+            "Cache write (5m)",
+            summary.cache_write_5m_tokens,
+            summary.cost.cache_write_5m,
+        ),
+        (
+            "Cache write (1h)",
+            summary.cache_write_1h_tokens,
+            summary.cost.cache_write_1h,
+        ),
     ];
 
     for (label, count, cost) in &rows {
@@ -97,12 +109,10 @@ pub fn render(summary: &Summary) -> String {
 
     split_table.add_row(vec![
         Cell::new(format!("Main thread ({:.0}%)", main_pct)),
-        Cell::new(format_number(summary.main_requests as u64))
-            .set_alignment(CellAlignment::Right),
+        Cell::new(format_number(summary.main_requests as u64)).set_alignment(CellAlignment::Right),
         Cell::new(format_number(summary.main_input_output_tokens))
             .set_alignment(CellAlignment::Right),
-        Cell::new(format_dollar(summary.main_cost))
-            .set_alignment(CellAlignment::Right),
+        Cell::new(format_dollar(summary.main_cost)).set_alignment(CellAlignment::Right),
     ]);
 
     split_table.add_row(vec![
@@ -111,8 +121,7 @@ pub fn render(summary: &Summary) -> String {
             .set_alignment(CellAlignment::Right),
         Cell::new(format_number(summary.subagent_input_output_tokens))
             .set_alignment(CellAlignment::Right),
-        Cell::new(format_dollar(summary.subagent_cost))
-            .set_alignment(CellAlignment::Right),
+        Cell::new(format_dollar(summary.subagent_cost)).set_alignment(CellAlignment::Right),
     ]);
 
     output.push('\n');
@@ -135,12 +144,10 @@ pub fn render(summary: &Summary) -> String {
         for m in &summary.by_model {
             model_table.add_row(vec![
                 Cell::new(&m.model),
-                Cell::new(format_number(m.requests as u64))
-                    .set_alignment(CellAlignment::Right),
+                Cell::new(format_number(m.requests as u64)).set_alignment(CellAlignment::Right),
                 Cell::new(format_number(m.input_tokens + m.output_tokens))
                     .set_alignment(CellAlignment::Right),
-                Cell::new(format_dollar(m.cost))
-                    .set_alignment(CellAlignment::Right),
+                Cell::new(format_dollar(m.cost)).set_alignment(CellAlignment::Right),
             ]);
         }
 
