@@ -6,6 +6,11 @@ rust-version = "1.75"
 description = "Honest token metrics for Claude Code — correct dedup, 5-type cache disaggregation, accurate costs"
 license = "MIT"
 repository = "https://github.com/ishpreet95/ccmetrics"
+homepage = "https://github.com/ishpreet95/ccmetrics"
+readme = "README.md"
+keywords = ["claude", "anthropic", "tokens", "metrics", "cli"]
+categories = ["command-line-utilities", "development-tools"]
+exclude = ["docs/", "evaluations/", "memory/", ".claude/", ".github/", ".DS_Store"]
 
 [dependencies]
 anyhow = "1"

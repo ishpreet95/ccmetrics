@@ -36,11 +36,12 @@ pub fn render(summary: &Summary, filters: &Filters) -> String {
         Cell::new("Cost").add_attribute(Attribute::Bold),
     ]);
 
-    let total_tokens = summary.input_tokens
-        + summary.output_tokens
-        + summary.cache_read_tokens
-        + summary.cache_write_5m_tokens
-        + summary.cache_write_1h_tokens;
+    let total_tokens = summary
+        .input_tokens
+        .saturating_add(summary.output_tokens)
+        .saturating_add(summary.cache_read_tokens)
+        .saturating_add(summary.cache_write_5m_tokens)
+        .saturating_add(summary.cache_write_1h_tokens);
 
     let rows = [
         ("Input tokens", summary.input_tokens, summary.cost.input),
@@ -71,7 +72,7 @@ pub fn render(summary: &Summary, filters: &Filters) -> String {
 
         token_table.add_row(vec![
             Cell::new(label),
-            Cell::new(format_number(*count)).set_alignment(CellAlignment::Right),
+            Cell::new(format_abbreviated(*count)).set_alignment(CellAlignment::Right),
             Cell::new(format!("{:.2}%", pct)).set_alignment(CellAlignment::Right),
             Cell::new(format_dollar(*cost)).set_alignment(CellAlignment::Right),
         ]);
@@ -82,7 +83,7 @@ pub fn render(summary: &Summary, filters: &Filters) -> String {
         Cell::new("Total")
             .add_attribute(Attribute::Bold)
             .fg(Color::Cyan),
-        Cell::new(format_number(total_tokens))
+        Cell::new(format_abbreviated(total_tokens))
             .set_alignment(CellAlignment::Right)
             .add_attribute(Attribute::Bold)
             .fg(Color::Cyan),
@@ -122,7 +123,7 @@ pub fn render(summary: &Summary, filters: &Filters) -> String {
     split_table.add_row(vec![
         Cell::new(format!("Main thread ({:.0}%)", main_pct)),
         Cell::new(format_number(summary.main_requests as u64)).set_alignment(CellAlignment::Right),
-        Cell::new(format_number(summary.main_input_output_tokens))
+        Cell::new(format_abbreviated(summary.main_input_output_tokens))
             .set_alignment(CellAlignment::Right),
         Cell::new(format_dollar(summary.main_cost)).set_alignment(CellAlignment::Right),
     ]);
@@ -131,7 +132,7 @@ pub fn render(summary: &Summary, filters: &Filters) -> String {
         Cell::new(format!("Subagents ({:.0}%)", sub_pct)),
         Cell::new(format_number(summary.subagent_requests as u64))
             .set_alignment(CellAlignment::Right),
-        Cell::new(format_number(summary.subagent_input_output_tokens))
+        Cell::new(format_abbreviated(summary.subagent_input_output_tokens))
             .set_alignment(CellAlignment::Right),
         Cell::new(format_dollar(summary.subagent_cost)).set_alignment(CellAlignment::Right),
     ]);
@@ -157,8 +158,10 @@ pub fn render(summary: &Summary, filters: &Filters) -> String {
             model_table.add_row(vec![
                 Cell::new(&m.model),
                 Cell::new(format_number(m.requests as u64)).set_alignment(CellAlignment::Right),
-                Cell::new(format_number(m.input_tokens + m.output_tokens))
-                    .set_alignment(CellAlignment::Right),
+                Cell::new(format_abbreviated(
+                    m.input_tokens.saturating_add(m.output_tokens),
+                ))
+                .set_alignment(CellAlignment::Right),
                 Cell::new(format_dollar(m.cost)).set_alignment(CellAlignment::Right),
             ]);
         }
@@ -187,8 +190,10 @@ pub fn render(summary: &Summary, filters: &Filters) -> String {
                 Cell::new(&p.project),
                 Cell::new(format_number(p.sessions as u64)).set_alignment(CellAlignment::Right),
                 Cell::new(format_number(p.requests as u64)).set_alignment(CellAlignment::Right),
-                Cell::new(format_number(p.input_tokens + p.output_tokens))
-                    .set_alignment(CellAlignment::Right),
+                Cell::new(format_abbreviated(
+                    p.input_tokens.saturating_add(p.output_tokens),
+                ))
+                .set_alignment(CellAlignment::Right),
                 Cell::new(format_dollar(p.cost)).set_alignment(CellAlignment::Right),
             ]);
         }
@@ -210,7 +215,7 @@ pub fn render(summary: &Summary, filters: &Filters) -> String {
     output
 }
 
-/// Format a number with thousand separators.
+/// Format a number with thousand separators (exact).
 pub fn format_number(n: u64) -> String {
     let s = n.to_string();
     let mut result = String::new();
@@ -221,6 +226,53 @@ pub fn format_number(n: u64) -> String {
         result.push(c);
     }
     result.chars().rev().collect()
+}
+
+/// Format a number in abbreviated form: 2.86B, 6.1M, 260K.
+///
+/// Uses 2-3 significant figures, trims trailing zeros.
+/// Numbers below 1,000 are shown as-is.
+pub fn format_abbreviated(n: u64) -> String {
+    if n < 1_000 {
+        return n.to_string();
+    }
+
+    let (value, suffix) = if n >= 1_000_000_000 {
+        (n as f64 / 1_000_000_000.0, "B")
+    } else if n >= 1_000_000 {
+        (n as f64 / 1_000_000.0, "M")
+    } else {
+        (n as f64 / 1_000.0, "K")
+    };
+
+    // If rounding will push us to 1000+, promote to the next tier
+    if value >= 999.5 {
+        return match suffix {
+            "K" => "1M".to_string(),
+            "M" => "1B".to_string(),
+            // B tier: no higher suffix, show as-is
+            _ => format!("{:.0}B", value),
+        };
+    }
+
+    // Precision: target 2-3 significant figures
+    let formatted = if value >= 100.0 {
+        format!("{:.0}", value)
+    } else if value >= 10.0 {
+        format!("{:.1}", value)
+    } else {
+        format!("{:.2}", value)
+    };
+
+    // Trim trailing zeros after decimal point
+    let trimmed = if formatted.contains('.') {
+        let t = formatted.trim_end_matches('0').trim_end_matches('.');
+        t.to_string()
+    } else {
+        formatted
+    };
+
+    format!("{}{}", trimmed, suffix)
 }
 
 /// Format a dollar amount with alignment padding.
@@ -245,6 +297,53 @@ mod tests {
         assert_eq!(format_number(1_000), "1,000");
         assert_eq!(format_number(1_140_000), "1,140,000");
         assert_eq!(format_number(2_730_000_000), "2,730,000,000");
+    }
+
+    #[test]
+    fn test_format_abbreviated() {
+        // Below 1K: exact
+        assert_eq!(format_abbreviated(0), "0");
+        assert_eq!(format_abbreviated(1), "1");
+        assert_eq!(format_abbreviated(999), "999");
+
+        // Thousands
+        assert_eq!(format_abbreviated(1_000), "1K");
+        assert_eq!(format_abbreviated(1_140), "1.14K");
+        assert_eq!(format_abbreviated(1_500), "1.5K");
+        assert_eq!(format_abbreviated(10_500), "10.5K");
+        assert_eq!(format_abbreviated(260_000), "260K");
+
+        // Millions
+        assert_eq!(format_abbreviated(1_000_000), "1M");
+        assert_eq!(format_abbreviated(1_140_000), "1.14M");
+        assert_eq!(format_abbreviated(6_100_000), "6.1M");
+        assert_eq!(format_abbreviated(153_000_000), "153M");
+
+        // Billions
+        assert_eq!(format_abbreviated(1_000_000_000), "1B");
+        assert_eq!(format_abbreviated(2_730_000_000), "2.73B");
+        assert_eq!(format_abbreviated(2_860_000_000), "2.86B");
+    }
+
+    #[test]
+    fn test_format_abbreviated_tier_promotion() {
+        // Rounding at K→M boundary
+        assert_eq!(format_abbreviated(999_500), "1M");
+        assert_eq!(format_abbreviated(999_999), "1M");
+
+        // Rounding at M→B boundary
+        assert_eq!(format_abbreviated(999_500_000), "1B");
+        assert_eq!(format_abbreviated(999_999_999), "1B");
+
+        // Just below rounding threshold stays in current tier
+        assert_eq!(format_abbreviated(999_499), "999K");
+        assert_eq!(format_abbreviated(999_499_999), "999M");
+
+        // Very large values (trillions) — no T tier, stays as B
+        assert_eq!(format_abbreviated(1_000_000_000_000), "1000B");
+
+        // u64::MAX doesn't panic
+        let _ = format_abbreviated(u64::MAX);
     }
 
     #[test]

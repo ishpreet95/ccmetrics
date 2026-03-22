@@ -5,7 +5,7 @@ use crate::filters::Filters;
 use crate::types::DayBreakdown;
 
 use super::round2;
-use super::table::{format_dollar, format_number};
+use super::table::{format_abbreviated, format_dollar, format_number};
 
 /// Render the daily view as a terminal table.
 pub fn render(days: &[DayBreakdown], version: &str, filters: &Filters) -> String {
@@ -43,7 +43,7 @@ pub fn render(days: &[DayBreakdown], version: &str, filters: &Filters) -> String
     let mut total_cost: f64 = 0.0;
 
     for day in days {
-        let io_tokens = day.input_tokens + day.output_tokens;
+        let io_tokens = day.input_tokens.saturating_add(day.output_tokens);
         total_requests += day.requests;
         total_io_tokens += io_tokens;
         total_cost += day.cost;
@@ -51,7 +51,7 @@ pub fn render(days: &[DayBreakdown], version: &str, filters: &Filters) -> String
         table.add_row(vec![
             Cell::new(&day.date),
             Cell::new(format_number(day.requests as u64)).set_alignment(CellAlignment::Right),
-            Cell::new(format_number(io_tokens)).set_alignment(CellAlignment::Right),
+            Cell::new(format_abbreviated(io_tokens)).set_alignment(CellAlignment::Right),
             Cell::new(format_dollar(day.cost)).set_alignment(CellAlignment::Right),
         ]);
     }
@@ -65,7 +65,7 @@ pub fn render(days: &[DayBreakdown], version: &str, filters: &Filters) -> String
             .set_alignment(CellAlignment::Right)
             .add_attribute(Attribute::Bold)
             .fg(Color::Cyan),
-        Cell::new(format_number(total_io_tokens))
+        Cell::new(format_abbreviated(total_io_tokens))
             .set_alignment(CellAlignment::Right)
             .add_attribute(Attribute::Bold)
             .fg(Color::Cyan),
