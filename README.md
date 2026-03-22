@@ -1,5 +1,7 @@
 # ccmetrics
 
+[![CI](https://github.com/ishpreet95/ccmetrics/actions/workflows/ci.yml/badge.svg)](https://github.com/ishpreet95/ccmetrics/actions/workflows/ci.yml)
+
 Honest token usage metrics for Claude Code.
 
 ## What it does
@@ -26,24 +28,28 @@ cargo install --path .
 
 ```bash
 ccmetrics              # Summary table
-ccmetrics --json       # JSON output
+ccmetrics --json       # JSON output (includes per-model breakdown)
 ccmetrics --verbose    # Detailed stats
+ccmetrics explain      # Walk through the methodology on your data
 ```
 
 ## What makes it different
 
 - **Correct dedup** -- groups by `requestId`, keeps final chunk (`stop_reason != null`) with real token counts
 - **5-type token split** -- input, output, cache read, cache write 5m, cache write 1h (each at different pricing)
-- **Main vs subagent** -- separates main thread from subagent usage (subagents are 43% of requests)
+- **Per-model breakdown** -- token and cost split by model for independent verification
+- **Main vs subagent** -- separates main thread from subagent usage
 - **Pricing modifiers** -- fast mode (6x), data residency (1.1x), long context (2x/1.5x)
+- **Explain mode** -- `ccmetrics explain` walks through dedup, pricing, and cache tiers using your own data
 - **No runtime** -- single Rust binary, no network, no database
 
 ## Docs
 
-- [PRD](docs/PRD.md) -- product requirements (v1.3, scored 86/100)
+- [PRD](docs/PRD.md) -- product requirements (v1.3)
 - [Architecture](docs/ARCHITECTURE.md) -- module layout, data flow
 - [Pricing](docs/PRICING.md) -- embedded pricing table reference
+- [Research blog](https://ishpreet95.me/blog/understanding-claude-code-token-metrics) -- full analysis of why tools disagree
 
 ## Status
 
-Phase 1 MVP complete. 30 tests passing. Running against real data.
+Phase 1 MVP complete. 47 tests passing (37 unit + 10 integration). CI on GitHub Actions (ubuntu + macOS).
